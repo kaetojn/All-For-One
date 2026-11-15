@@ -1,0 +1,6 @@
+{
+  "name": "all-for-one",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}

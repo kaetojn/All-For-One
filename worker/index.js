@@ -1,0 +1,86 @@
+// All For One backend: one Cloudflare Worker.
+//
+// It does four jobs:
+//   1. Serves the web app from public/.
+//   2. Accounts and the app's own API (/api/*), signed in with a cookie.
+//   3. OAuth sign-in for Claude (/oauth/*, /.well-known/*).
+//   4. The Claude connector (/mcp).
+//
+// Bindings (wrangler.toml): DB is the D1 database, ASSETS is the public/ folder.
+
+import { ensureSchema } from './schema.js';
+import { HttpError, signUp, checkPassword, sessionCookie, clearCookie, sessionUser, userCount } from './auth.js';
+import * as oauth from './oauth.js';
+import { mcp } from './mcp.js';
+import * as store from './store.js';
+
+const json = (body, status = 200, headers = {}) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });
+
+async function api(db, request, path) {
+  const method = request.method;
+  // The cookie is SameSite=Lax, which already keeps other sites from sending it on writes.
+  // Checking Origin as well covers browsers that don't enforce that.
+  if (method !== 'GET') {
+    const origin = request.headers.get('Origin');
+    if (origin && origin !== new URL(request.url).origin) throw new HttpError(403, 'Cross-site request refused.');
+  }
+  const body = method === 'GET' || method === 'DELETE' ? {} : await request.json().catch(() => { throw new HttpError(400, 'Send JSON.'); });
+
+  if (path === '/api/signup' && method === 'POST') {
+    const user = await signUp(db, body.email, body.password);
+    return json({ user }, 201, { 'Set-Cookie': await sessionCookie(db, user.id) });
+  }
+  if (path === '/api/login' && method === 'POST') {
+    const user = await checkPassword(db, body.email, body.password);
+    return json({ user }, 200, { 'Set-Cookie': await sessionCookie(db, user.id) });
+  }
+  if (path === '/api/logout' && method === 'POST') return json({ ok: true }, 200, { 'Set-Cookie': clearCookie() });
+
+  const user = await sessionUser(db, request);
+  if (path === '/api/state' && method === 'GET') {
+    if (!user) return json({ signed_in: false, can_sign_up: (await userCount(db)) === 0 });
+    return json({ signed_in: true, user, ...(await store.overview(db, user.id)) });
+  }
+  if (!user) throw new HttpError(401, 'Sign in first.');
+  const uid = user.id;
+
+  if (path === '/api/profile' && method === 'PUT') return json(await store.updateProfile(db, uid, body));
+  if (path === '/api/goal' && method === 'PUT') return json(await store.setGoal(db, uid, body));
+  if (path === '/api/weight' && method === 'POST') return json(await store.logWeight(db, uid, body));
+  if (path.startsWith('/api/weight/') && method === 'DELETE') { await store.deleteWeight(db, uid, path.slice(12)); return json({ ok: true }); }
+  if (path === '/api/measurements' && method === 'POST') return json(await store.logMeasurements(db, uid, body));
+  if (path === '/api/day' && method === 'POST') return json(await store.logDay(db, uid, body));
+  if (path === '/api/history' && method === 'GET') return json(await store.history(db, uid, new URL(request.url).searchParams.get('days')));
+  if (path === '/api/target' && method === 'POST') return json(await store.setTarget(db, uid, body, 'you'));
+  if (path === '/api/target/revert' && method === 'POST') return json({ target: await store.revertTarget(db, uid) });
+  if (path === '/api/targets' && method === 'GET') return json(await store.targetHistory(db, uid));
+  throw new HttpError(404, 'Not found.');
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const dynamic = path.startsWith('/api/') || path.startsWith('/oauth/') || path.startsWith('/.well-known/') || path === '/mcp';
+    if (!dynamic) return env.ASSETS.fetch(request);
+    try {
+      await ensureSchema(env.DB);
+      if (path === '/mcp') return await mcp(env.DB, request, url.origin);
+      if (path.startsWith('/.well-known/oauth-authorization-server')) return oauth.metadata(url.origin);
+      if (path.startsWith('/.well-known/oauth-protected-resource')) return oauth.resourceMetadata(url.origin);
+      if (path.startsWith('/oauth/') && request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'POST, OPTIONS' } });
+      }
+      if (path === '/oauth/register' && request.method === 'POST') return await oauth.register(env.DB, request);
+      if (path === '/oauth/authorize' && (request.method === 'GET' || request.method === 'POST')) return await oauth.authorize(env.DB, request);
+      if (path === '/oauth/token' && request.method === 'POST') return await oauth.token(env.DB, request);
+      if (path.startsWith('/api/')) return await api(env.DB, request, path);
+      return json({ error: 'Not found.' }, 404);
+    } catch (e) {
+      if (e instanceof HttpError) return json({ error: e.message }, e.status);
+      console.error(e);
+      return json({ error: 'Something went wrong on the server.' }, 500);
+    }
+  },
+};
