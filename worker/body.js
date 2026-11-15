@@ -42,7 +42,7 @@ export async function bodyModel(db, uid) {
   const overrides = row && row.body_overrides ? JSON.parse(row.body_overrides) : {};
   return {
     sex: o.profile.sex, height_cm: o.profile.height_cm || 170, skin_tone: o.profile.skin_tone || '#d19c74',
-    measured: Object.keys(o.latest.measurements), current,
+    measured: Object.keys(o.latest.measurements), current, weight_kg: weight, target_weight_kg: o.suggested.target_weight_kg || null, areas: o.goal ? o.goal.target_areas : [],
     goal: o.goal ? projectGoal(current, { weight_kg: weight, target_weight_kg: o.suggested.target_weight_kg, areas: o.goal.target_areas, overrides }) : null,
     goal_date: o.goal ? o.goal.target_date : null, overrides,
     body_fat: o.latest.body_fat ? o.latest.body_fat.pct : null, target_body_fat: o.goal ? o.goal.target_body_fat : null,

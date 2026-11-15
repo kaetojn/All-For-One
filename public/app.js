@@ -43,8 +43,16 @@ const lOut = (cm) => (cm == null ? '' : r1(imperial() ? cm / IN : cm));
 const lIn = (v) => (v === '' || v == null ? null : imperial() ? Number(v) * IN : Number(v));
 const niceDate = (d) => new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
+// While a request is taking a moment, the companion does squats instead of showing a spinner.
+let waiting = 0;
+function wait(promise) {
+  waiting += 1;
+  const timer = setTimeout(() => mascot.busy(true), 250);
+  return promise.finally(() => { clearTimeout(timer); waiting -= 1; if (!waiting) mascot.busy(false); });
+}
+
 async function api(method, path, body) {
-  const res = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const res = await wait(fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined }));
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong.');
   return data;
@@ -68,7 +76,8 @@ async function load() {
     if (state.view === 'tabs' && state.tab === 'food') state.food = await api('GET', '/api/food');
     if (state.view === 'tabs' && state.tab === 'plan') [state.targets, state.plan] = await Promise.all([api('GET', '/api/targets'), api('GET', '/api/plan').then((r) => r.plan)]);
     if (state.view === 'workout') state.session = d.workout.active;
-  }
+    if (d.profile.onboarded_at) { if (!(state.view === 'tabs' && state.tab === 'body')) state.body = await api('GET', '/api/body'); showMascot(state.body); } else showMascot(STAND_IN);
+  } else showMascot(STAND_IN);
   render();
 }
 
@@ -77,42 +86,29 @@ async function save(work, message) {
   try {
     const out = await work();
     await load();
-    if (message) toast(typeof message === 'function' ? message(out) : message);
+    if (message) { toast(typeof message === 'function' ? message(out) : message); mascot.react('pump', 800); }
   } catch (e) {
     toast(e.message);
   }
 }
 
-/* ---------- Ember, the mascot ---------- */
-// An original character: a small flame that grows with your streak and dozes when it hasn't been fed today.
+/* ---------- the companion ---------- */
+// A small copy of your own 3D figure that lives on the page (see mascot.js). It is loaded after the
+// first screen is drawn, so the app never waits for it. Until then these calls do nothing.
 
-const EMBER_SIZE = { spark: 44, ember: 50, flame: 56, blaze: 62, bonfire: 68, beacon: 74 };
-
-function ember(stage = 'ember', mood = 'happy', size) {
-  const px = size || EMBER_SIZE[stage] || 76;
-  const big = ['blaze', 'bonfire', 'beacon'].includes(stage);
-  const bright = ['bonfire', 'beacon'].includes(stage);
-  const eyes = mood === 'sleepy'
-    ? '<path d="M43 97q5 4 10 0M67 97q5 4 10 0" fill="none" stroke="#3a2418" stroke-width="2.6" stroke-linecap="round"/>'
-    : mood === 'cheer'
-      ? '<path d="M43 99q5-8 10 0M67 99q5-8 10 0" fill="none" stroke="#3a2418" stroke-width="2.8" stroke-linecap="round"/>'
-      : '<ellipse cx="48" cy="96" rx="4" ry="5.4" fill="#3a2418"/><ellipse cx="72" cy="96" rx="4" ry="5.4" fill="#3a2418"/><circle cx="49.4" cy="94" r="1.4" fill="#fff"/><circle cx="73.4" cy="94" r="1.4" fill="#fff"/>';
-  const mouth = mood === 'cheer'
-    ? '<path d="M53 106q7 10 14 0z" fill="#3a2418"/>'
-    : mood === 'sleepy'
-      ? '<path d="M56 109h8" stroke="#3a2418" stroke-width="2.4" stroke-linecap="round"/>'
-      : '<path d="M53 107q7 7 14 0" fill="none" stroke="#3a2418" stroke-width="2.6" stroke-linecap="round"/>';
-  return `<svg class="ember ${stage} ${mood}" width="${px}" height="${Math.round(px * 1.17)}" viewBox="0 0 120 140" role="img" aria-label="Ember, your flame">
-    <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f9c45c"/><stop offset=".55" stop-color="#f58a3c"/><stop offset="1" stop-color="#e9552f"/></linearGradient></defs>
-    ${stage === 'beacon' ? '<circle cx="60" cy="88" r="56" fill="#f7b34c" opacity=".16"/>' : ''}
-    ${big ? '<g class="side"><path d="M24 78c-10 10-12 28-2 40 2-14 8-20 2-40z" fill="#f7b34c"/><path d="M96 78c10 10 12 28 2 40-2-14-8-20-2-40z" fill="#f7b34c"/></g>' : ''}
-    <path class="body" d="M60 8c10 26 40 44 40 80 0 26-18 44-40 44S20 114 20 88c0-22 14-32 22-48 4 12 10 14 12 4 2-12 2-24 6-36z" fill="url(#eg)"/>
-    <path class="core" d="M60 62c8 14 20 22 20 38 0 14-9 24-20 24s-20-10-20-24c0-14 12-22 20-38z" fill="#fde2a2"/>
-    ${eyes}${mouth}
-    <circle cx="39" cy="105" r="4.2" fill="#f0623a" opacity=".35"/><circle cx="81" cy="105" r="4.2" fill="#f0623a" opacity=".35"/>
-    ${bright ? '<g fill="#f7b34c"><circle class="twinkle" cx="14" cy="40" r="3"/><circle class="twinkle" cx="106" cy="30" r="2.4" style="animation-delay:.6s"/><circle class="twinkle" cx="98" cy="62" r="2" style="animation-delay:1.1s"/></g>' : ''}
-  </svg>`;
+let mascot = { shape() {}, react() {}, busy() {} };
+let mascotKey = '';
+const STAND_IN = { sex: 'male', height_cm: 176, weight_kg: 74, skin_tone: '#d19c74', measured: [], current: {}, goal: null, overrides: {}, areas: [] };
+function showMascot(model) {
+  const key = JSON.stringify([model.sex, model.height_cm, model.weight_kg, model.skin_tone, model.measured.map((m) => model.current[m])]);
+  if (key === mascotKey) return;
+  mascotKey = key;
+  mascot.shape(model);
 }
+import('/mascot.js').then((m) => { mascot = m.mascot; const key = mascotKey; mascotKey = ''; if (key) showMascot(state.body || STAND_IN); }).catch(() => {});
+
+// A spot for the companion to stand. `mood` picks how it behaves there: happy, cheer or sleepy.
+const perch = (mood = 'happy', size = 64) => `<span class="perch" data-mascot data-mood="${mood}" data-size="${size}" style="width:${Math.round(size * 0.6)}px;height:${size}px"></span>`;
 
 const segments = (done, goal) => {
   const total = Math.max(goal || 0, done, 1);
@@ -128,7 +124,7 @@ const dose = (x) => `${x.sets} × ${x.reps}${x.weight_kg ? ` · ${wOut(x.weight_
 function authScreen() {
   const claim = state.data.can_sign_up;
   return `<div class="auth-page"><main class="auth-card fade">
-    <div class="row"><div class="fit">${ember('flame', 'happy', 64)}</div><div><h1>All For One</h1><p class="muted">${claim ? 'Create your account to claim this app. Sign-up closes after that.' : 'Welcome back.'}</p></div></div>
+    <div class="row"><div class="fit">${perch('happy', 72)}</div><div><h1>All For One</h1><p class="muted">${claim ? 'Create your account to claim this app. Sign-up closes after that.' : 'Welcome back.'}</p></div></div>
     ${state.authError ? `<p class="error">${esc(state.authError)}</p>` : ''}
     <form id="auth" data-mode="${claim ? 'signup' : 'login'}">
       <label>Email<input name="email" type="email" autocomplete="username" required></label>
@@ -163,7 +159,7 @@ function introScreen() {
   ];
   return `<div class="shell bare fade">
     <div class="bar-top">${s.step ? '<button class="link fit" data-action="intro-back">Back</button>' : ''}${segments(s.step + 1, steps.length)}</div>
-    <div class="hello">${ember('ember', 'happy', 56)}<p>${['Hi, I\'m Ember. Five quick questions and you\'re in.', 'Got it.', 'No wrong answers here.', 'Nearly there.', 'Then I\'ll build your first week.'][s.step]}</p></div>
+    <div class="hello">${perch('happy', 64)}<p>${['Five quick questions and you\'re in.', 'Got it.', 'No wrong answers here.', 'Nearly there.', 'Then I\'ll build your first week.'][s.step]}</p></div>
     ${steps[s.step]()}
   </div>`;
 }
@@ -172,9 +168,9 @@ function introScreen() {
 
 function greeting(d) {
   const s = d.streak;
-  if (d.workout.done_today) return ['cheer', 'Workout done. I\'m glowing.'];
-  if (!s.checked_in_today && s.days === 0) return ['sleepy', 'Wake me up with a check-in.'];
-  if (s.days >= 3) return ['happy', `${s.days} days in a row. Keep me lit.`];
+  if (d.workout.done_today) return ['cheer', 'Workout done. Enjoy that.'];
+  if (!s.checked_in_today && s.days === 0) return ['sleepy', 'A quick check-in gets things moving.'];
+  if (s.days >= 3) return ['happy', `${s.days} days in a row. Keep it going.`];
   if (s.checked_in_today) return ['happy', 'Checked in today. Nice.'];
   return ['happy', 'Ready when you are.'];
 }
@@ -211,8 +207,9 @@ function todayScreen() {
   const checkSummary = log.target_met === true ? 'On target' : log.target_met === false ? 'Missed today' : log.calories != null ? `${log.calories} kcal` : 'Not logged';
   const pct = t && log.calories != null ? Math.min(100, Math.round((log.calories / t.calories) * 100)) : 0;
   const note = t && t.set_by === 'claude' && t.reason ? `<div class="note"><b>Coach's note</b><span>${esc(t.reason)}</span></div>` : '';
-  return `<div class="hello">${ember(d.streak.stage, mood)}<div><h1>${d.streak.days ? `Day ${d.streak.days}` : 'Today'}</h1><p>${line}</p></div></div>
+  return `<div class="hello"><div><h1>${d.streak.days ? `Day ${d.streak.days}` : 'Today'}</h1><p>${line}</p></div></div>
     <div class="stack" style="gap:8px"><div class="row"><h3>This week</h3><span class="muted small fit">${d.workout.week.done}${d.workout.week.goal ? ` of ${d.workout.week.goal}` : ''} workouts</span></div>${segments(d.workout.week.done, d.workout.week.goal)}</div>
+    <div class="seat-row"><span class="seat" data-mascot="sit" data-mood="${mood}" data-size="84"></span></div>
     ${anchor(d)}
     ${d.review.latest ? `<details class="card" data-keep="review" ${state.open === 'review' ? 'open' : ''}><summary>Coach review<span>${niceDate(d.review.latest.period_end)}</span></summary><div class="inside"><p style="white-space:pre-line">${esc(d.review.latest.summary)}</p><p class="muted small">Next review in ${d.review.days_until} days.</p></div></details>` : ''}
     <details class="card" data-keep="check" ${state.open === 'check' ? 'open' : ''}>
@@ -251,7 +248,7 @@ function workoutScreen() {
   const done = s.items.filter((i) => i.done).length;
   return `<div class="shell bare">
     <div class="bar-top"><button class="link fit" data-action="leave">Back</button>${segments(done, s.items.length)}<span class="muted small fit">${done}/${s.items.length}</span></div>
-    <h1>${esc(s.day_name)}</h1>
+    <div class="row" style="align-items:end"><h1>${esc(s.day_name)}</h1><span class="fit">${perch('happy', 76)}</span></div>
     <p class="muted small" style="margin-top:-8px">Tap the circle when an exercise is done. Tap its name to see how.</p>
     ${s.items.map((x) => `<div class="exercise ${x.done ? 'done' : ''}">
       ${demo(x.exercise_id, true)}
@@ -288,7 +285,7 @@ function celebrateScreen() {
   const r = state.result;
   const sparks = Array.from({ length: 14 }, (_, i) => { const a = (i / 14) * Math.PI * 2; return `<i style="--x:${Math.round(Math.cos(a) * (110 + (i % 3) * 30))}px;--y:${Math.round(Math.sin(a) * (110 + (i % 3) * 30))}px"></i>`; }).join('');
   return `<div class="celebrate"><div class="sparks" aria-hidden="true">${sparks}</div>
-    ${ember(state.data.streak.stage, 'cheer', 132)}
+    ${perch('cheer', 210)}
     <h1>${esc(r.win)}</h1>
     <div style="width:220px">${segments(r.week.done, r.week.goal)}</div>
     ${r.effort_meaning ? `<p class="muted">${esc(r.effort_meaning)}</p>` : ''}
@@ -302,7 +299,7 @@ function celebrateScreen() {
 function locked(key, title, text) {
   const have = state.data.streak.active_days;
   const need = UNLOCK_AT[key];
-  return `<section class="card locked">${ember('spark', 'sleepy', 56)}<h2>${title}</h2><p class="muted">${text}</p>
+  return `<section class="card locked">${perch('sleepy', 72)}<h2>${title}</h2><p class="muted">${text}</p>
     <div style="width:100%;max-width:220px">${segments(Math.min(have, need), need)}</div>
     <p class="muted small">${have} of ${need} check-in days. Any workout, food check or weigh-in counts.</p></section>`;
 }
@@ -475,7 +472,7 @@ function bodyCard() {
       ${Object.keys(b.overrides).length ? '<button class="link" data-action="shape-reset">Back to the projection</button>' : ''}</div></details>` : '';
   return `<section class="card">
       <div class="seg" role="group" aria-label="Which body to show"><button data-action="body-view" data-value="now" aria-pressed="${view === 'now'}">Now</button><button data-action="body-view" data-value="goal" aria-pressed="${view === 'goal'}" ${b.goal ? '' : 'disabled'}>Goal</button></div>
-      <div class="stage"><canvas id="body3d" aria-label="3D model of your body. Drag to rotate, pinch to zoom."></canvas><span class="cap">${view === 'goal' ? `Projected for ${niceDate(b.goal_date)} ${b.goal_date.slice(0, 4)}${b.target_body_fat ? ` · ${b.target_body_fat}% body fat` : ''}` : `Today${b.body_fat ? ` · ${b.body_fat}% body fat` : ''}`} · drag to turn</span></div>
+      <div class="stage"><canvas id="body3d" aria-label="3D model of your body. Drag to rotate, pinch to zoom."></canvas><span class="cap">${view === 'goal' ? `Projected for ${niceDate(b.goal_date)}, ${b.goal_date.slice(0, 4)}${b.target_body_fat ? ` · ${b.target_body_fat}% body fat` : ''}` : `Today${b.body_fat ? ` · ${b.body_fat}% body fat` : ''}`}</span></div>
       <div class="swatches" role="group" aria-label="Skin tone">${TONES.map((t) => `<button data-action="tone" data-value="${t}" aria-pressed="${b.skin_tone === t}" aria-label="Skin tone" style="background:${t}"></button>`).join('')}</div>
       ${guessed ? `<p class="muted small" style="text-align:center">${guessed === SITES.length ? 'This shape is estimated from your height and weight.' : `${guessed} of ${SITES.length} measurements are still estimates.`} Add tape measurements below to make it yours.</p>` : ''}
       ${b.goal ? '' : '<p class="muted small" style="text-align:center">Set a goal in Plan to see where you are heading.</p>'}
@@ -484,16 +481,16 @@ function bodyCard() {
 
 function mountViewer() {
   const canvas = document.getElementById('body3d');
-  if (!canvas || !state.body) { if (viewer) viewer.destroy(); viewer = null; return; }
-  const b = state.body;
-  const shape = state.bodyView === 'goal' && b.goal ? b.goal : b.current;
-  import('/body3d.js').then(({ mountBody }) => {
-    if (viewer) viewer.destroy();
-    viewer = mountBody(canvas, { measurements: state.bodyShown || shape, height: b.height_cm, tone: b.skin_tone, female: b.sex === 'female' });
-    if (!viewer) { canvas.replaceWith(Object.assign(document.createElement('p'), { className: 'muted small', textContent: '3D is not available in this browser.' })); return; }
-    if (state.bodyShown && state.bodyShown !== shape) viewer.morph(shape);
-    state.bodyShown = shape;
-  });
+  if (viewer) { viewer.destroy(); viewer = null; }
+  if (!canvas || !state.body) return;
+  const which = state.bodyView === 'goal' && state.body.goal ? 'goal' : 'now';
+  const first = state.bodyShown || which; // start from what was on screen, then glide to the new shape
+  import('/body3d.js').then(({ mountBody }) => mountBody(canvas, state.body, first)).then((v) => {
+    if (!canvas.isConnected) return v.destroy();
+    viewer = v;
+    if (first !== which) v.show(state.body, which);
+    state.bodyShown = which;
+  }).catch(() => canvas.replaceWith(Object.assign(document.createElement('p'), { className: 'muted small', textContent: '3D is not available in this browser.' })));
 }
 
 // Shrink a photo in the browser before upload: faster, and it drops location data stored in the file.
@@ -510,7 +507,7 @@ async function uploadPhoto(input) {
   if (!file) return;
   toast('Uploading…');
   const blob = await shrink(file);
-  const res = await fetch(`/api/photos?kind=${input.dataset.kind}${input.dataset.pose ? `&pose=${input.dataset.pose}` : ''}`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+  const res = await wait(fetch(`/api/photos?kind=${input.dataset.kind}${input.dataset.pose ? `&pose=${input.dataset.pose}` : ''}`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob }));
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Upload failed.');
   if (input.dataset.kind === 'meal') state.mealResult = data;
@@ -744,6 +741,7 @@ async function act(el) {
     render(); // show the tap at once; the save follows
     state.session = await api('POST', `/api/workout/${state.session.id}/item`, body);
     if (a === 'tick' && body.done) {
+      mascot.react('pump', 900);
       const left = state.session.items.filter((i) => !i.done).length;
       toast(left ? `${left} to go.` : 'That\'s all of them.');
     }
@@ -764,7 +762,7 @@ async function act(el) {
 
   // Body, photos, food, reminders
   if (a === 'body-view') { state.bodyView = el.dataset.value; return render(); }
-  if (a === 'tone') { state.body.skin_tone = el.dataset.value; if (viewer) viewer.tone(el.dataset.value); el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); return api('PUT', '/api/profile', { skin_tone: el.dataset.value }); }
+  if (a === 'tone') { state.body.skin_tone = el.dataset.value; if (viewer) viewer.tone(el.dataset.value); showMascot(state.body); el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); return api('PUT', '/api/profile', { skin_tone: el.dataset.value }); }
   if (a === 'shape-reset') { state.body = await api('PUT', '/api/body', { overrides: {} }); return render(); }
   if (a === 'del-photo') return save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Photo deleted.');
   if (a === 'bought') { state.food.plan = await api('POST', '/api/food/bought', { index: Number(el.dataset.index) }); return render(); }
@@ -813,15 +811,15 @@ document.addEventListener('input', (e) => {
   if (el.dataset.action !== 'shape') return;
   state.body.goal = { ...state.body.goal, [el.dataset.site]: Number(el.value) };
   document.querySelector(`[data-out="${el.dataset.site}"]`).textContent = lOut(Number(el.value));
+  state.body.overrides = { ...state.body.overrides, [el.dataset.site]: Number(el.value) };
   state.bodyView = 'goal';
-  state.bodyShown = state.body.goal;
-  if (viewer) viewer.morph(state.body.goal);
+  state.bodyShown = 'goal';
+  if (viewer) viewer.show(state.body, 'goal', false);
 });
 document.addEventListener('change', (e) => {
   const el = e.target;
   if (el.dataset.action === 'shape') {
-    const overrides = { ...state.body.overrides, [el.dataset.site]: Number(el.value) };
-    api('PUT', '/api/body', { overrides }).then((b) => { state.body = b; }).catch((err) => toast(err.message));
+    api('PUT', '/api/body', { overrides: state.body.overrides }).then((b) => { state.body = b; }).catch((err) => toast(err.message));
   } else if ('upload' in el.dataset) {
     uploadPhoto(el).catch((err) => toast(err.message));
   }

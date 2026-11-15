@@ -10,7 +10,6 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 - **First run:** five quick questions (goal, level, time, equipment, basic numbers) and a starter plan is built.
 - **Workouts:** a plan of ordered days built from your equipment and target areas. One tap completes an exercise; sets, reps and weights come pre-filled from last time. Each exercise has start and end photos that loop, plus written steps.
 - **After a workout:** rate the effort from 1 to 10 and how you feel; the app says what that effort level means.
-- **Ember:** the mascot, a small flame that grows with your check-in streak.
 - **Tracking:** weight, tape measurements, and a daily food check (on target or not, calories, protein).
 - **Body fat:** calculated from neck and waist (plus hips for women) and height, using the US Navy method.
 - **Goal and calorie target:** an aggressive pace gets a warning and a safer alternative, and you choose.
@@ -19,7 +18,8 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 
 ## Also built
 
-- **3D body:** a rotatable model shaped by your measurements, with a projected goal shape you can adjust.
+- **3D body:** a human figure morphed in the browser until its tape measurements match yours, with a projected goal shape you can adjust. Rendered with three.js.
+- **Companion:** a small copy of that figure lives on the page. It sits on the workout card, squats while something loads, pumps a fist when you tick an exercise and cheers when you finish.
 - **Photos:** private progress and meal photos, with instant estimates when `ANTHROPIC_API_KEY` is set on the Worker.
 - **Food:** store, budget, household and dietary needs; a weekly meal plan and shopping list that Claude writes; a price list Claude fills in.
 - **Reminders:** up to two a day, sent only when there is something to do.
@@ -71,5 +71,7 @@ Pushing to `main` runs the tests and deploys the Worker. The repository needs tw
 One optional Worker secret: `ANTHROPIC_API_KEY`, for instant photo estimates. The deploy token also needs R2 edit permission for the photo bucket. The session signing key is generated on first use and stored in the database.
 
 ## Credits
+
+The body mesh, shape targets and skeleton are from the MakeHuman / MPFB2 project (CC0), as packaged in [Anny](https://github.com/naver/anny); `scripts/build-body.py` packs them. 3D rendering uses [three.js](https://threejs.org) (MIT), copied into `public/vendor/`.
 
 Exercise data and photos come from [Free Exercise DB](https://github.com/yuhonas/free-exercise-db), which is in the public domain.
