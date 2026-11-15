@@ -210,3 +210,101 @@ test('everything else is served from the static assets', async () => {
   const a = app();
   assert.equal((await a.call('GET', '/')).data, 'asset');
 });
+
+const ANSWERS = { fitness_level: 'beginner', primary_goal: 'fat_loss', minutes: 30, days_per_week: 3, equipment: ['dumbbell'], sex: 'male', birth_year: 1990, height_cm: 180, weight_kg: 90 };
+
+test('onboarding builds a plan and the workout loop prefills from last time', async () => {
+  const a = app();
+  await a.call('POST', '/api/signup', { email: 'me@example.com', password: 'correct horse battery' });
+  assert.equal((await a.call('POST', '/api/onboarding', { ...ANSWERS, sex: undefined })).status, 400);
+  const home = (await a.call('POST', '/api/onboarding', ANSWERS)).data;
+  assert.ok(home.profile.onboarded_at);
+  assert.deepEqual(home.profile.equipment, ['dumbbell']);
+  assert.equal(home.latest.weight.kg, 90);
+  assert.equal(home.streak.days, 1, 'the weigh-in counts as a check-in');
+  assert.equal(home.streak.stage, 'ember');
+  assert.deepEqual(home.workout.week, { done: 0, goal: 3 });
+  assert.equal(home.workout.next.day_index, 0);
+  assert.ok(home.workout.next.exercises.length >= 3);
+  assert.ok(home.workout.next.exercises.every((x) => x.name && ['body only', 'dumbbell'].includes(x.equipment)));
+  assert.equal(home.unlocks.trends, false);
+
+  const s = (await a.call('POST', '/api/workout/start', {})).data;
+  assert.equal(s.status, 'active');
+  assert.equal((await a.call('POST', '/api/workout/start', {})).data.id, s.id, 'starting again resumes');
+  await a.call('POST', `/api/workout/${s.id}/item`, { position: 0, done: true, weight_kg: 12.5, reps: 14 });
+  const after = (await a.call('POST', `/api/workout/${s.id}/item`, { position: 1, done: true })).data;
+  assert.equal(after.items[0].weight_kg, 12.5);
+  assert.equal((await a.call('POST', `/api/workout/${s.id}/item`, { position: 15, done: true })).status, 404);
+  const fin = (await a.call('POST', `/api/workout/${s.id}/finish`, { effort: 7, feeling: 'strong' })).data;
+  assert.equal(fin.win, 'First workout of the week. You showed up.');
+  assert.match(fin.effort_meaning, /sustainable/);
+
+  const state = (await a.call('GET', '/api/state')).data;
+  assert.equal(state.workout.week.done, 1);
+  assert.equal(state.workout.done_today.day_name, s.day_name);
+  assert.equal(state.workout.next.day_index, 1, 'the plan moves on to the next day');
+
+  // Jump back to the first day: last time's weight and reps come pre-filled.
+  const again = (await a.call('POST', '/api/workout/start', { day_index: 0 })).data;
+  assert.equal(again.items[0].weight_kg, 12.5);
+  assert.equal(again.items[0].reps, 14);
+  assert.equal((await a.call('POST', `/api/workout/${again.id}/cancel`, {})).status, 200);
+  assert.equal((await a.call('GET', '/api/state')).data.workout.active, null);
+  assert.equal((await a.call('GET', '/api/workouts')).data.length, 1);
+  assert.equal((await a.call('POST', '/api/workout/00000000-0000-0000-0000-000000000000/finish', {})).status, 404);
+
+  await a.call('PUT', '/api/profile', { show_all: true });
+  assert.equal((await a.call('GET', '/api/state')).data.unlocks.fine_tuning, true);
+});
+
+test('win messages and plans', async () => {
+  const { winMessage } = await import('../worker/workouts.js');
+  const { buildPlan, BY_ID } = await import('../worker/planner.js');
+  assert.equal(winMessage(3, 5), "3rd workout this week. You're locked in.");
+  assert.equal(winMessage(2, 5), "2nd workout this week. You're locked in.");
+  assert.equal(winMessage(3, 3), "That's all 3 for the week. Goal hit.");
+  assert.equal(winMessage(4, 3), 'Bonus session. Above and beyond.');
+  for (const days of [1, 2, 3, 4, 5, 6, 7]) {
+    const plan = buildPlan({ days_per_week: days, minutes: 45, fitness_level: 'beginner', primary_goal: 'consistency', equipment: [] }, ['abs']);
+    assert.equal(plan.days.length, days);
+    for (const d of plan.days) {
+      assert.ok(d.exercises.length >= 3, `${d.name} is too short`);
+      assert.equal(new Set(d.exercises.map((x) => x.exercise_id)).size, d.exercises.length, 'no repeats within a day');
+      for (const x of d.exercises) {
+        const e = BY_ID.get(x.exercise_id);
+        assert.equal(e.equipment, 'body only');
+        assert.equal(e.level, 'beginner');
+        assert.doesNotMatch(e.name, /chin|pull-?up/i, 'no bar, no pull-ups');
+      }
+    }
+  }
+});
+
+test('claude can read and replace the workout plan', async () => {
+  const a = app();
+  await a.call('POST', '/api/signup', { email: 'me@example.com', password: 'correct horse battery' });
+  await a.call('POST', '/api/onboarding', ANSWERS);
+  const { verifier, params } = await connect(a);
+  const ok = await a.call('POST', '/oauth/authorize', new URLSearchParams({ ...params, decision: 'allow' }));
+  const code = new URL(ok.headers.get('Location')).searchParams.get('code');
+  const tokens = await a.call('POST', '/oauth/token', new URLSearchParams({ grant_type: 'authorization_code', code, client_id: params.client_id, redirect_uri: params.redirect_uri, code_verifier: verifier }));
+  const tool = async (name, args = {}) => {
+    const res = await a.call('POST', '/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, { Authorization: `Bearer ${tokens.data.access_token}` });
+    const text = res.data.result.content[0].text;
+    return res.data.result.isError ? { error: text } : JSON.parse(text);
+  };
+  assert.equal((await tool('get_workout_plan')).set_by, 'app');
+  const found = await tool('search_exercises', { muscle: 'chest', equipment: 'dumbbell', limit: 3 });
+  assert.equal(found.length, 3);
+  assert.ok(found.every((e) => e.equipment === 'dumbbell'));
+  assert.match((await tool('set_workout_plan', { days: [{ name: 'A', exercises: [{ exercise_id: 'made-up' }] }], reason: 'x' })).error, /Unknown exercise/);
+  const plan = await tool('set_workout_plan', { days: [{ name: 'Chest day', exercises: found.map((e) => ({ exercise_id: e.id, sets: 3, reps: 10 })) }], reason: 'More chest work, as you asked.' });
+  assert.equal(plan.set_by, 'claude');
+  assert.equal(plan.days[0].exercises[0].name, found[0].name);
+  const over = await tool('get_overview');
+  assert.equal(over.workout.next.name, 'Chest day');
+  assert.equal(over.profile.days_per_week, 3);
+  assert.deepEqual(await tool('get_workouts'), []);
+  assert.deepEqual((await tool('update_profile', { equipment: ['dumbbell', 'bands'] })).equipment, ['dumbbell', 'bands']);
+});

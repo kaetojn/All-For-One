@@ -4,6 +4,8 @@
 import { HttpError } from './auth.js';
 import { bearerUser } from './oauth.js';
 import * as store from './store.js';
+import * as workouts from './workouts.js';
+import { searchExercises } from './planner.js';
 import { SITES, ACTIVITY } from './calc.js';
 
 const VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
@@ -13,10 +15,10 @@ const TOOLS = [
   {
     name: 'get_overview',
     title: 'Get overview',
-    description: 'Read the current picture: profile, active goal, the calorie target in force, the target the goal and timeline imply (with safety warnings and a safer alternative when the pace is aggressive), latest weight, body fat and measurements, and the last 7 days of logging. Call this first.',
+    description: 'Read the current picture: profile (level, time, days a week, equipment, primary goal), today\'s workout and this week\'s count, streak, active goal, the calorie target in force, the target the goal and timeline imply (with safety warnings and a safer alternative when the pace is aggressive), latest weight, body fat and measurements, and the last 7 days of logging. Call this first.',
     inputSchema: { type: 'object', properties: {} },
     readOnly: true,
-    run: (db, uid) => store.overview(db, uid),
+    run: (db, uid) => workouts.home(db, uid),
   },
   {
     name: 'get_history',
@@ -70,15 +72,46 @@ const TOOLS = [
     run: (db, uid, a) => store.setTarget(db, uid, a, 'claude'),
   },
   {
+    name: 'get_workout_plan',
+    title: 'Get workout plan',
+    description: 'Read the current workout plan: each day with its exercises, sets and reps.',
+    inputSchema: { type: 'object', properties: {} },
+    readOnly: true,
+    run: async (db, uid) => workouts.planView(await workouts.getPlan(db, uid)),
+  },
+  {
+    name: 'get_workouts',
+    title: 'Get workouts',
+    description: 'List finished workouts, newest first: what was done, weights used, effort from 1 to 10 with what it means, and how the user felt. Use it in reviews to see which exercises get skipped and when effort is trending too high.',
+    inputSchema: { type: 'object', properties: { days: { type: 'integer', minimum: 1, maximum: 400, description: 'How many days back. Default 30.' } } },
+    readOnly: true,
+    run: (db, uid, a) => workouts.workoutHistory(db, uid, a.days),
+  },
+  {
+    name: 'search_exercises',
+    title: 'Search exercises',
+    description: 'Find exercises in the built-in library (about 780, each with demo photos in the app). Filter by muscle (abdominals, biceps, calves, chest, forearms, glutes, hamstrings, lats, lower back, middle back, quadriceps, shoulders, traps, triceps), equipment, level (beginner, intermediate, expert) or a name fragment. Returns ids to use in set_workout_plan.',
+    inputSchema: { type: 'object', properties: { muscle: { type: 'string' }, equipment: { type: 'string', description: `"body only" or one of: ${store.EQUIPMENT.join(', ')}.` }, level: { type: 'string' }, query: { type: 'string' }, limit: { type: 'integer' } } },
+    readOnly: true,
+    run: (db, uid, a) => searchExercises(a),
+  },
+  {
+    name: 'set_workout_plan',
+    title: 'Set workout plan',
+    description: 'Replace the workout plan. Only use exercises the user has the equipment for (see the profile), fit each day inside their minutes per workout, and match the number of days to their days a week. Days are done in order, whatever the weekday. Applies immediately; the reason is shown to the user in the app.',
+    inputSchema: { type: 'object', properties: { days: { type: 'array', minItems: 1, maxItems: 7, items: { type: 'object', properties: { name: { type: 'string' }, exercises: { type: 'array', minItems: 1, maxItems: 12, items: { type: 'object', properties: { exercise_id: { type: 'string' }, sets: { type: 'integer' }, reps: { type: 'integer' } }, required: ['exercise_id'] } } }, required: ['name', 'exercises'] } }, reason: { type: 'string', description: 'One or two sentences the user will read: what changed and why.' } }, required: ['days', 'reason'] },
+    run: (db, uid, a) => workouts.setPlan(db, uid, a, 'claude'),
+  },
+  {
     name: 'update_profile',
     title: 'Update profile',
-    description: `Update profile fields used by the formulas and reviews. activity is one of: ${Object.keys(ACTIVITY).join(', ')}. review_cadence is weekly, biweekly or monthly.`,
-    inputSchema: { type: 'object', properties: { sex: { type: 'string', enum: ['male', 'female'] }, birth_year: { type: 'integer' }, height_cm: { type: 'number' }, activity: { type: 'string', enum: Object.keys(ACTIVITY) }, units: { type: 'string', enum: ['metric', 'imperial'] }, timezone: { type: 'string' }, review_cadence: { type: 'string', enum: ['weekly', 'biweekly', 'monthly'] } } },
+    description: `Update profile fields used by the formulas, plans and reviews. activity is one of: ${Object.keys(ACTIVITY).join(', ')}. review_cadence is weekly, biweekly or monthly. equipment replaces the whole list.`,
+    inputSchema: { type: 'object', properties: { sex: { type: 'string', enum: ['male', 'female'] }, birth_year: { type: 'integer' }, height_cm: { type: 'number' }, activity: { type: 'string', enum: Object.keys(ACTIVITY) }, units: { type: 'string', enum: ['metric', 'imperial'] }, timezone: { type: 'string' }, review_cadence: { type: 'string', enum: ['weekly', 'biweekly', 'monthly'] }, fitness_level: { type: 'string', enum: store.LEVELS }, primary_goal: { type: 'string', enum: store.GOALS }, minutes: { type: 'integer', description: 'Minutes per workout.' }, days_per_week: { type: 'integer' }, equipment: { type: 'array', items: { type: 'string', enum: store.EQUIPMENT } } } },
     run: (db, uid, a) => store.updateProfile(db, uid, a),
   },
 ];
 
-const INSTRUCTIONS = 'All For One is the user\'s personal diet and fitness tracker. Stored values are metric (kg, cm); convert when the profile says imperial. Start with get_overview. The tape-measure body-fat figure is the official one. When you change the calorie target, give a short reason the user can read in the app. Unsafe paces are allowed but must be flagged clearly.';
+const INSTRUCTIONS = 'All For One is the user\'s personal diet and fitness tracker. Stored values are metric (kg, cm); convert when the profile says imperial. Start with get_overview. Workouts come from a plan of ordered days; build plans with search_exercises and set_workout_plan. The tape-measure body-fat figure is the official one. When you change the calorie target, give a short reason the user can read in the app. Unsafe paces are allowed but must be flagged clearly.';
 
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });

@@ -13,6 +13,7 @@ import { HttpError, signUp, checkPassword, sessionCookie, clearCookie, sessionUs
 import * as oauth from './oauth.js';
 import { mcp } from './mcp.js';
 import * as store from './store.js';
+import * as workouts from './workouts.js';
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });
@@ -40,7 +41,7 @@ async function api(db, request, path) {
   const user = await sessionUser(db, request);
   if (path === '/api/state' && method === 'GET') {
     if (!user) return json({ signed_in: false, can_sign_up: (await userCount(db)) === 0 });
-    return json({ signed_in: true, user, ...(await store.overview(db, user.id)) });
+    return json({ signed_in: true, user, ...(await workouts.home(db, user.id)) });
   }
   if (!user) throw new HttpError(401, 'Sign in first.');
   const uid = user.id;
@@ -55,6 +56,18 @@ async function api(db, request, path) {
   if (path === '/api/target' && method === 'POST') return json(await store.setTarget(db, uid, body, 'you'));
   if (path === '/api/target/revert' && method === 'POST') return json({ target: await store.revertTarget(db, uid) });
   if (path === '/api/targets' && method === 'GET') return json(await store.targetHistory(db, uid));
+  if (path === '/api/onboarding' && method === 'POST') return json(await workouts.onboard(db, uid, body));
+  if (path === '/api/plan' && method === 'GET') return json({ plan: workouts.planView(await workouts.getPlan(db, uid)) });
+  if (path === '/api/plan/regenerate' && method === 'POST') return json({ plan: await workouts.generatePlan(db, uid, 'Rebuilt from your current profile') });
+  if (path === '/api/workout/start' && method === 'POST') return json(await workouts.startWorkout(db, uid, body));
+  if (path === '/api/workouts' && method === 'GET') return json(await workouts.workoutHistory(db, uid, new URL(request.url).searchParams.get('days')));
+  const match = path.match(/^\/api\/workout\/([0-9a-f-]{36})\/(item|finish|cancel)$/);
+  if (match && method === 'POST') {
+    if (match[2] === 'item') return json(await workouts.updateItem(db, uid, match[1], body));
+    if (match[2] === 'finish') return json(await workouts.finishWorkout(db, uid, match[1], body));
+    await workouts.cancelWorkout(db, uid, match[1]);
+    return json({ ok: true });
+  }
   throw new HttpError(404, 'Not found.');
 }
 

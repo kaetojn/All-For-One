@@ -6,7 +6,7 @@ import { extname, join, normalize } from 'node:path';
 import worker from '../worker/index.js';
 import { fakeD1 } from '../test/d1.js';
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.webmanifest': 'application/manifest+json' };
 const root = join(import.meta.dirname, '..', 'public');
 const env = {
   DB: fakeD1(),

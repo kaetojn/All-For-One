@@ -30,8 +30,16 @@ export function todayIn(timezone) {
   }
 }
 
+export const LEVELS = ['beginner', 'intermediate', 'advanced'];
+export const GOALS = ['fat_loss', 'strength', 'consistency', 'general_health'];
+// What the exercise library calls each kind of kit. Bodyweight moves are always available.
+export const EQUIPMENT = ['dumbbell', 'barbell', 'kettlebells', 'bands', 'cable', 'machine', 'e-z curl bar', 'exercise ball', 'medicine ball', 'foam roll', 'other'];
+
+const PROFILE_COLUMNS = ['sex', 'birth_year', 'height_cm', 'activity', 'units', 'timezone', 'review_cadence', 'fitness_level', 'minutes', 'days_per_week', 'primary_goal', 'equipment', 'onboarded_at', 'show_all'];
+
 export async function getProfile(db, uid) {
-  return db.prepare(`SELECT sex, birth_year, height_cm, activity, units, timezone, review_cadence FROM profiles WHERE user_id = ?`).bind(uid).first();
+  const row = await db.prepare(`SELECT ${PROFILE_COLUMNS.join(', ')} FROM profiles WHERE user_id = ?`).bind(uid).first();
+  return { ...row, equipment: JSON.parse(row.equipment || '[]'), show_all: !!row.show_all };
 }
 
 export async function updateProfile(db, uid, input) {
@@ -59,8 +67,25 @@ export async function updateProfile(db, uid, input) {
     if (!['weekly', 'biweekly', 'monthly'].includes(input.review_cadence)) throw new HttpError(400, 'Review cadence must be weekly, biweekly or monthly.');
     next.review_cadence = input.review_cadence;
   }
-  await db.prepare(`UPDATE profiles SET sex = ?, birth_year = ?, height_cm = ?, activity = ?, units = ?, timezone = ?, review_cadence = ?, updated_at = ? WHERE user_id = ?`)
-    .bind(next.sex, next.birth_year, next.height_cm, next.activity, next.units, next.timezone, next.review_cadence, new Date().toISOString(), uid).run();
+  if ('fitness_level' in input) {
+    if (!LEVELS.includes(input.fitness_level)) throw new HttpError(400, `Fitness level must be one of: ${LEVELS.join(', ')}.`);
+    next.fitness_level = input.fitness_level;
+  }
+  if ('primary_goal' in input) {
+    if (!GOALS.includes(input.primary_goal)) throw new HttpError(400, `Primary goal must be one of: ${GOALS.join(', ')}.`);
+    next.primary_goal = input.primary_goal;
+  }
+  if ('minutes' in input) next.minutes = num(input.minutes, 'Minutes per workout', 10, 180, { integer: true });
+  if ('days_per_week' in input) next.days_per_week = num(input.days_per_week, 'Workouts a week', 1, 7, { integer: true });
+  if ('equipment' in input) {
+    if (!Array.isArray(input.equipment) || !input.equipment.every((e) => EQUIPMENT.includes(e))) throw new HttpError(400, `Equipment must be a list from: ${EQUIPMENT.join(', ')}.`);
+    next.equipment = [...new Set(input.equipment)];
+  }
+  if ('show_all' in input) next.show_all = !!input.show_all;
+  if (input.onboarded && !next.onboarded_at) next.onboarded_at = new Date().toISOString();
+  const stored = { ...next, equipment: JSON.stringify(next.equipment), show_all: next.show_all ? 1 : 0 };
+  await db.prepare(`UPDATE profiles SET ${PROFILE_COLUMNS.map((c) => `${c} = ?`).join(', ')}, updated_at = ? WHERE user_id = ?`)
+    .bind(...PROFILE_COLUMNS.map((c) => stored[c] ?? null), new Date().toISOString(), uid).run();
   return next;
 }
 
