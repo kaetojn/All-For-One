@@ -96,6 +96,16 @@ function weekStart(date) {
   return addDays(date, -((dow + 6) % 7)); // Monday
 }
 
+export const SYMPTOMS = ['Knee', 'Lower back', 'Shoulder', 'Wrist', 'Dizzy', 'Chest pain', 'Short of breath'];
+const RED_FLAGS = ['Dizzy', 'Chest pain', 'Short of breath'];
+// Not a diagnosis: a prompt to stop and get checked when a symptom is one that should never be trained through.
+export function symptomAdvice(symptoms = []) {
+  const red = symptoms.filter((x) => RED_FLAGS.includes(x));
+  if (red.length) return { level: 'stop', message: `${red.join(' and ')} during exercise should be checked by a doctor before you train again. If it is severe or does not pass, get medical help now.` };
+  if (symptoms.length) return { level: 'care', message: `Noted: ${symptoms.join(', ').toLowerCase()}. Go lighter on movements that load it, and mention it to your coach review. See a professional if it lingers or gets worse.` };
+  return null;
+}
+
 const ordinal = (n) => `${n}${['th', 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : Math.min(n % 10, 4) % 4]}`;
 
 export function winMessage(doneThisWeek, weeklyGoal) {
@@ -117,7 +127,7 @@ async function sessionView(db, workout) {
   const items = (await db.prepare(`SELECT position, exercise_id, sets, reps, weight_kg, done FROM workout_items WHERE workout_id = ? ORDER BY position`).bind(workout.id).all()).results;
   return {
     id: workout.id, date: workout.date, day_name: workout.day_name, day_index: workout.day_index, status: workout.status,
-    effort: workout.effort, feeling: workout.feeling, note: workout.note, kcal: workout.kcal,
+    effort: workout.effort, feeling: workout.feeling, note: workout.note, kcal: workout.kcal, symptoms: workout.symptoms ? JSON.parse(workout.symptoms) : [],
     items: items.map((i) => ({ ...i, done: !!i.done, ...describe(i.exercise_id) })),
   };
 }
@@ -152,7 +162,7 @@ export async function home(db, uid) {
       week: { done, goal },
       next,
       active: active ? await sessionView(db, active) : null,
-      done_today: doneToday ? { ...(await sessionView(db, doneToday)), win: winMessage(done, goal), effort_meaning: effortMeaning(doneToday.effort) } : null,
+      done_today: doneToday ? { ...(await sessionView(db, doneToday)), win: winMessage(done, goal), effort_meaning: effortMeaning(doneToday.effort), advice: symptomAdvice(doneToday.symptoms ? JSON.parse(doneToday.symptoms) : []) } : null,
     },
   };
 }
@@ -209,10 +219,11 @@ export async function finishWorkout(db, uid, id, input = {}) {
   const effort = int(input.effort, 'Effort', 1, 10, null);
   const feeling = input.feeling ? String(input.feeling).slice(0, 40) : null;
   const note = input.note ? String(input.note).slice(0, 2000) : null;
-  await db.prepare(`UPDATE workouts SET status = 'done', finished_at = COALESCE(finished_at, ?), effort = ?, feeling = ?, note = ? WHERE id = ?`).bind(new Date().toISOString(), effort, feeling, note, id).run();
+  const symptoms = (Array.isArray(input.symptoms) ? input.symptoms : []).filter((x) => SYMPTOMS.includes(x));
+  await db.prepare(`UPDATE workouts SET status = 'done', finished_at = COALESCE(finished_at, ?), effort = ?, feeling = ?, note = ?, symptoms = ? WHERE id = ?`).bind(new Date().toISOString(), effort, feeling, note, symptoms.length ? JSON.stringify(symptoms) : null, id).run();
   const profile = await getProfile(db, uid);
   const done = await weekCount(db, uid, todayIn(profile.timezone));
-  return { win: winMessage(done, profile.days_per_week), effort_meaning: effortMeaning(effort), week: { done, goal: profile.days_per_week || null } };
+  return { win: winMessage(done, profile.days_per_week), effort_meaning: effortMeaning(effort), advice: symptomAdvice(symptoms), week: { done, goal: profile.days_per_week || null } };
 }
 
 export async function cancelWorkout(db, uid, id) {
@@ -231,7 +242,7 @@ export async function workoutHistory(db, uid, days = 30) {
   const out = [];
   for (const w of rows) {
     const s = await sessionView(db, w);
-    out.push({ date: s.date, day_name: s.day_name, effort: s.effort, effort_meaning: effortMeaning(s.effort), feeling: s.feeling, note: s.note, kcal: s.kcal,
+    out.push({ date: s.date, day_name: s.day_name, symptoms: s.symptoms, effort: s.effort, effort_meaning: effortMeaning(s.effort), feeling: s.feeling, note: s.note, kcal: s.kcal,
       exercises: s.items.map(({ exercise_id, name, sets, reps, weight_kg, done }) => ({ exercise_id, name, sets, reps, weight_kg, done })) });
   }
   return out;

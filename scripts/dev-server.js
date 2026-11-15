@@ -8,8 +8,15 @@ import { fakeD1 } from '../test/d1.js';
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.webmanifest': 'application/manifest+json' };
 const root = join(import.meta.dirname, '..', 'public');
+const files = new Map();
 const env = {
   DB: fakeD1(),
+  // Photos are kept in memory for the preview.
+  PHOTOS: {
+    put: async (k, v, o) => files.set(k, { v, o }),
+    get: async (k) => (files.has(k) ? { body: files.get(k).v, httpMetadata: files.get(k).o.httpMetadata, arrayBuffer: async () => files.get(k).v } : null),
+    delete: async (k) => files.delete(k),
+  },
   ASSETS: {
     async fetch(request) {
       let path = normalize(new URL(request.url).pathname);

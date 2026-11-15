@@ -10,7 +10,8 @@ const $app = document.getElementById('app');
 const $toast = document.getElementById('toast');
 const state = {
   data: null, tab: 'today', view: 'tabs', history: null, targets: null, plan: null, authError: '',
-  session: null, open: null, result: null, finish: { effort: null, feeling: null },
+  session: null, open: null, result: null, finish: { effort: null, feeling: null, symptoms: [] },
+  body: null, bodyView: 'now', bodyShown: null, photos: null, food: null, mealResult: null, confirmRefresh: false, syncKey: null,
   intro: { step: 0, units: 'metric', equipment: [] },
 };
 
@@ -24,6 +25,7 @@ const GOALS = { fat_loss: ['Lose fat', 'Lean out while keeping muscle'], strengt
 const LEVELS = { beginner: ['New to this', 'Little or no training lately'], intermediate: ['Some experience', 'I know the basic movements'], advanced: ['Experienced', 'I train regularly'] };
 const KIT = { dumbbell: 'Dumbbells', barbell: 'Barbell', kettlebells: 'Kettlebells', bands: 'Bands', cable: 'Cables', machine: 'Machines', other: 'Pull-up or dip bars', 'e-z curl bar': 'EZ bar', 'exercise ball': 'Exercise ball', 'medicine ball': 'Medicine ball', 'foam roll': 'Foam roller' };
 const FEELINGS = ['Strong', 'Good', 'Tired', 'Sore', 'Drained'];
+const SYMPTOMS = ['Knee', 'Lower back', 'Shoulder', 'Wrist', 'Dizzy', 'Chest pain', 'Short of breath'];
 const EFFORT = ['', 'Very easy', 'Easy', 'Easy', 'Comfortable', 'Moderate', 'Moderate', 'Hard', 'Hard', 'Very hard', 'All out'];
 const UNLOCK_AT = { trends: 3, body: 7, fine_tuning: 14 };
 const LB = 2.20462;
@@ -62,7 +64,8 @@ async function load() {
   if (d.signed_in) {
     if (!d.profile.onboarded_at) state.view = 'intro';
     else if (state.view === 'intro') state.view = 'tabs';
-    if (state.view === 'tabs' && state.tab === 'progress') state.history = await api('GET', '/api/history?days=90');
+    if (state.view === 'tabs' && state.tab === 'body') [state.history, state.body, state.photos] = await Promise.all([api('GET', '/api/history?days=90'), api('GET', '/api/body'), d.photo_storage ? api('GET', '/api/photos?kind=body') : []]);
+    if (state.view === 'tabs' && state.tab === 'food') state.food = await api('GET', '/api/food');
     if (state.view === 'tabs' && state.tab === 'plan') [state.targets, state.plan] = await Promise.all([api('GET', '/api/targets'), api('GET', '/api/plan').then((r) => r.plan)]);
     if (state.view === 'workout') state.session = d.workout.active;
   }
@@ -83,7 +86,7 @@ async function save(work, message) {
 /* ---------- Ember, the mascot ---------- */
 // An original character: a small flame that grows with your streak and dozes when it hasn't been fed today.
 
-const EMBER_SIZE = { spark: 60, ember: 76, flame: 90, blaze: 102, bonfire: 114, beacon: 124 };
+const EMBER_SIZE = { spark: 44, ember: 50, flame: 56, blaze: 62, bonfire: 68, beacon: 74 };
 
 function ember(stage = 'ember', mood = 'happy', size) {
   const px = size || EMBER_SIZE[stage] || 76;
@@ -186,6 +189,8 @@ function anchor(d) {
   if (w.done_today) {
     return `<section class="card anchor done"><h3>Today</h3><p class="title">${esc(w.done_today.day_name)} done</p><p class="win">${esc(w.done_today.win)}</p>
       ${w.done_today.effort_meaning ? `<p class="muted small">Effort ${w.done_today.effort} of 10: ${esc(w.done_today.effort_meaning)}</p>` : ''}
+      ${w.done_today.kcal ? `<p class="muted small">${w.done_today.kcal} kcal burned, from Apple Health.</p>` : ''}
+      ${w.done_today.advice ? `<div class="${w.done_today.advice.level === 'stop' ? 'alert' : 'notice'}">${esc(w.done_today.advice.message)}</div>` : ''}
       ${w.next ? `<p class="muted small">Next up: ${esc(w.next.name)}</p>` : ''}</section>`;
   }
   if (!w.next) return `<section class="card anchor"><h3>Today</h3><p class="title">No plan yet</p><button class="go" data-action="rebuild">Build my plan</button></section>`;
@@ -209,6 +214,7 @@ function todayScreen() {
   return `<div class="hello">${ember(d.streak.stage, mood)}<div><h1>${d.streak.days ? `Day ${d.streak.days}` : 'Today'}</h1><p>${line}</p></div></div>
     <div class="stack" style="gap:8px"><div class="row"><h3>This week</h3><span class="muted small fit">${d.workout.week.done}${d.workout.week.goal ? ` of ${d.workout.week.goal}` : ''} workouts</span></div>${segments(d.workout.week.done, d.workout.week.goal)}</div>
     ${anchor(d)}
+    ${d.review.latest ? `<details class="card" data-keep="review" ${state.open === 'review' ? 'open' : ''}><summary>Coach review<span>${niceDate(d.review.latest.period_end)}</span></summary><div class="inside"><p style="white-space:pre-line">${esc(d.review.latest.summary)}</p><p class="muted small">Next review in ${d.review.days_until} days.</p></div></details>` : ''}
     <details class="card" data-keep="check" ${state.open === 'check' ? 'open' : ''}>
       <summary>Food check<span>${checkSummary}</span></summary>
       <div class="inside">
@@ -271,6 +277,8 @@ function finishScreen() {
     <p class="muted">${f.effort ? EFFORT[f.effort] : '1 is a stroll, 10 is everything you had.'}</p>
     <h2>How do you feel?</h2>
     <div class="chips">${FEELINGS.map((v) => `<button data-action="feeling" data-value="${v}" aria-pressed="${f.feeling === v}">${v}</button>`).join('')}</div>
+    <h2>Anything hurt or feel off?</h2>
+    <div class="chips">${SYMPTOMS.map((v) => `<button data-action="symptom" data-value="${v}" aria-pressed="${f.symptoms.includes(v)}">${v}</button>`).join('')}</div>
     <button class="go" data-action="finish">Save</button>
     <button class="link" data-action="finish" data-skip="1">Skip</button>
   </div>`;
@@ -284,6 +292,7 @@ function celebrateScreen() {
     <h1>${esc(r.win)}</h1>
     <div style="width:220px">${segments(r.week.done, r.week.goal)}</div>
     ${r.effort_meaning ? `<p class="muted">${esc(r.effort_meaning)}</p>` : ''}
+    ${r.advice ? `<div class="${r.advice.level === 'stop' ? 'alert' : 'notice'}" style="text-align:left">${esc(r.advice.message)}</div>` : ''}
     <button class="go" data-action="home" style="min-width:200px">Done</button>
   </div>`;
 }
@@ -317,10 +326,10 @@ function chart(points, goal) {
   </svg>`;
 }
 
-function progressScreen() {
+function bodyScreen() {
   const d = state.data;
   const h = state.history;
-  const head = `<h1 style="padding:4px 2px">Progress</h1>`;
+  const head = `<h1 class="page-title">Body</h1>${bodyCard()}${photosCard()}`;
   if (!d.unlocks.trends) return head + locked('trends', 'Trends unlock soon', 'Build a little history first, then your weight trend appears here.');
   if (!h) return head;
   const points = h.weights.map((w) => ({ date: w.date, v: wOut(w.kg) }));
@@ -386,7 +395,7 @@ function planScreen() {
   }
   const hist = state.targets || [];
   const live = hist.find((x) => !x.reverted_at);
-  return `<h1 style="padding:4px 2px">Plan</h1>
+  return `<h1 class="page-title">Plan</h1>
     ${p && p.set_by === 'claude' && p.reason ? `<div class="note"><b>Coach's note</b><span>${esc(p.reason)}</span></div>` : ''}
     <h3>Your week</h3>
     ${days || '<p class="muted">No plan yet.</p>'}
@@ -415,7 +424,7 @@ function settingsScreen() {
   const p = d.profile;
   const url = `${location.origin}/mcp`;
   const opt = (map, cur) => Object.entries(map).map(([k, v]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${Array.isArray(v) ? v[0] : v}</option>`).join('');
-  return `<h1 style="padding:4px 2px">More</h1>
+  return `<h1 class="page-title">More</h1>
     <section class="card">
       <h3>Training</h3>
       <form id="training" class="stack">
@@ -436,6 +445,7 @@ function settingsScreen() {
         <button class="primary">Save</button>
       </form>
     </section>
+    ${extraSettings()}
     <section class="card">
       <label class="switch">Show everything now<input type="checkbox" data-action="show-all" ${p.show_all ? 'checked' : ''}></label>
       <p class="muted small">Trends, body measurements and fine-tuning normally open up after 3, 7 and 14 check-in days. Turn this on to skip the wait.</p>
@@ -449,7 +459,178 @@ function settingsScreen() {
     <section class="card"><p class="muted small">Signed in as ${esc(d.user.email)}. Exercise photos are from the public-domain Free Exercise DB.</p><button data-action="logout">Sign out</button></section>`;
 }
 
-const TABS = { today: ['Today', todayScreen], progress: ['Progress', progressScreen], plan: ['Plan', planScreen], settings: ['More', settingsScreen] };
+/* ---------- body: the 3D model and progress photos ---------- */
+
+const TONES = ['#f6d7c3', '#e9bd9b', '#d19c74', '#b07a52', '#8a5a3b', '#5f3d28', '#3d2618'];
+let viewer = null;
+
+function bodyCard() {
+  const b = state.body;
+  if (!b) return '';
+  const view = state.bodyView === 'goal' && b.goal ? 'goal' : 'now';
+  const guessed = SITES.filter((s) => !b.measured.includes(s)).length;
+  const sliders = b.goal ? `<details class="card" data-keep="shape" ${state.open === 'shape' ? 'open' : ''}><summary>Adjust the goal shape<span>${Object.keys(b.overrides).length ? `${Object.keys(b.overrides).length} adjusted` : 'Projected'}</span></summary>
+      <div class="inside"><p class="muted small">The goal shape is projected from your target and the areas you chose. Fine-tune any part (${lUnit()}).</p>
+      ${SITES.map((s) => `<label>${cap(s)} · <span data-out="${s}">${lOut(b.goal[s])}</span><input type="range" data-action="shape" data-site="${s}" min="${Math.round(b.current[s] * 0.65)}" max="${Math.round(b.current[s] * 1.2)}" step="0.5" value="${b.goal[s]}"></label>`).join('')}
+      ${Object.keys(b.overrides).length ? '<button class="link" data-action="shape-reset">Back to the projection</button>' : ''}</div></details>` : '';
+  return `<section class="card">
+      <div class="seg" role="group" aria-label="Which body to show"><button data-action="body-view" data-value="now" aria-pressed="${view === 'now'}">Now</button><button data-action="body-view" data-value="goal" aria-pressed="${view === 'goal'}" ${b.goal ? '' : 'disabled'}>Goal</button></div>
+      <div class="stage"><canvas id="body3d" aria-label="3D model of your body. Drag to rotate, pinch to zoom."></canvas><span class="cap">${view === 'goal' ? `Projected for ${niceDate(b.goal_date)} ${b.goal_date.slice(0, 4)}${b.target_body_fat ? ` · ${b.target_body_fat}% body fat` : ''}` : `Today${b.body_fat ? ` · ${b.body_fat}% body fat` : ''}`} · drag to turn</span></div>
+      <div class="swatches" role="group" aria-label="Skin tone">${TONES.map((t) => `<button data-action="tone" data-value="${t}" aria-pressed="${b.skin_tone === t}" aria-label="Skin tone" style="background:${t}"></button>`).join('')}</div>
+      ${guessed ? `<p class="muted small" style="text-align:center">${guessed === SITES.length ? 'This shape is estimated from your height and weight.' : `${guessed} of ${SITES.length} measurements are still estimates.`} Add tape measurements below to make it yours.</p>` : ''}
+      ${b.goal ? '' : '<p class="muted small" style="text-align:center">Set a goal in Plan to see where you are heading.</p>'}
+    </section>${sliders}`;
+}
+
+function mountViewer() {
+  const canvas = document.getElementById('body3d');
+  if (!canvas || !state.body) { if (viewer) viewer.destroy(); viewer = null; return; }
+  const b = state.body;
+  const shape = state.bodyView === 'goal' && b.goal ? b.goal : b.current;
+  import('/body3d.js').then(({ mountBody }) => {
+    if (viewer) viewer.destroy();
+    viewer = mountBody(canvas, { measurements: state.bodyShown || shape, height: b.height_cm, tone: b.skin_tone, female: b.sex === 'female' });
+    if (!viewer) { canvas.replaceWith(Object.assign(document.createElement('p'), { className: 'muted small', textContent: '3D is not available in this browser.' })); return; }
+    if (state.bodyShown && state.bodyShown !== shape) viewer.morph(shape);
+    state.bodyShown = shape;
+  });
+}
+
+// Shrink a photo in the browser before upload: faster, and it drops location data stored in the file.
+async function shrink(file, max = 1280) {
+  const bitmap = await createImageBitmap(file);
+  const k = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const canvas = Object.assign(document.createElement('canvas'), { width: Math.round(bitmap.width * k), height: Math.round(bitmap.height * k) });
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return new Promise((done) => canvas.toBlob(done, 'image/jpeg', 0.85));
+}
+
+async function uploadPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  toast('Uploading…');
+  const blob = await shrink(file);
+  const res = await fetch(`/api/photos?kind=${input.dataset.kind}${input.dataset.pose ? `&pose=${input.dataset.pose}` : ''}`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Upload failed.');
+  if (input.dataset.kind === 'meal') state.mealResult = data;
+  await load();
+  toast(data.estimate ? 'Photo saved and estimated.' : 'Photo saved. Your coach will look at the next review.');
+}
+
+const estimateLine = (p) => {
+  const e = p.estimate;
+  if (!e) return 'Awaiting review';
+  if (e.unclear) return 'Could not read this photo';
+  return p.kind === 'body' ? `About ${e.body_fat_low}–${e.body_fat_high}% body fat` : `${e.name} · about ${e.kcal} kcal`;
+};
+
+function photosCard() {
+  const d = state.data;
+  if (!d.photo_storage) return '';
+  const list = state.photos || [];
+  return `<details class="card" data-keep="photos" ${state.open === 'photos' ? 'open' : ''}><summary>Progress photos<span>${list.length || 'None yet'}</span></summary>
+    <div class="inside">
+      <p class="muted small">Same spot, same light, same pose each time. Photos are private to you. ${d.photo_ai ? 'Each one gets a rough body-fat range; the tape measure stays the official number.' : 'Your coach looks at them during reviews.'}</p>
+      <div class="row">${['front', 'side', 'back'].map((pose) => `<label class="file">${cap(pose)}<input type="file" accept="image/*" data-upload data-kind="body" data-pose="${pose}"></label>`).join('')}</div>
+      ${list.length ? `<div class="gallery">${list.map((p) => `<figure><img src="${p.url}" alt="${p.pose} view, ${niceDate(p.date)}" loading="lazy"><figcaption>${niceDate(p.date)} · ${p.pose}<br>${esc(estimateLine(p))}${p.estimate && p.estimate.notes ? `<br>${esc(p.estimate.notes)}` : ''}<br><button class="link" data-action="del-photo" data-id="${p.id}">Delete</button></figcaption></figure>`).join('')}</div>` : ''}
+    </div></details>`;
+}
+
+/* ---------- food: meal plan, shopping list, prices ---------- */
+
+const CHAINS = ['Loblaws', 'Real Canadian Superstore', 'No Frills', 'Metro', 'Food Basics', 'Sobeys', 'FreshCo', 'Walmart', 'Costco'];
+const DIETS = ['vegetarian', 'vegan', 'pescatarian', 'no dairy', 'no gluten', 'no red meat', 'no pork', 'halal', 'kosher', 'low fat', 'low sodium', 'low sugar'];
+const money = (n) => (n == null ? '' : `$${Number(n).toFixed(2)}`);
+
+function foodScreen() {
+  const d = state.data;
+  const p = d.profile;
+  const f = state.food;
+  if (!f) return '<h1 class="page-title">Food</h1>';
+  const plan = f.plan;
+  const mr = state.mealResult;
+  const setup = `<details class="card" data-keep="foodsetup" ${state.open === 'foodsetup' || !p.store ? 'open' : ''}><summary>Shopping setup<span>${p.store ? `${esc(p.store)}${p.weekly_budget ? ` · ${money(p.weekly_budget)} a week` : ''}` : 'Not set'}</span></summary>
+    <div class="inside"><form id="food" class="stack">
+      <label>Where you shop<select name="store"><option value="">Choose</option>${CHAINS.map((c) => `<option ${p.store === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+      <div class="split"><label>Weekly budget ($)<input name="weekly_budget" inputmode="decimal" value="${p.weekly_budget ?? ''}"></label><label>People to feed<input name="household" inputmode="numeric" value="${p.household ?? 1}"></label></div>
+      <label>Postal code, for local flyers<input name="postal" value="${esc(p.postal ?? '')}" autocomplete="postal-code"></label>
+      <div class="stack" style="gap:10px"><h3>Dietary needs</h3><div class="chips" id="diet">${DIETS.map((x) => `<button type="button" data-action="area" data-diet="${x}" aria-pressed="${p.diet.includes(x)}">${cap(x)}</button>`).join('')}</div></div>
+      <button class="primary">Save</button>
+    </form></div></details>`;
+  const meals = plan ? plan.days.map((day, i) => `<details class="card" data-keep="meal${i}" ${state.open === `meal${i}` ? 'open' : ''}><summary>${esc(day.day)}<span>${Math.round(day.meals.reduce((s, m) => s + (m.kcal || 0), 0))} kcal</span></summary>
+      <div class="inside"><div>${day.meals.map((m) => `<div class="meal"><div><small>${m.slot}</small>${esc(m.name)}${m.ingredients.length ? `<br><span class="muted small">${esc(m.ingredients.join(', '))}</span>` : ''}</div><span class="muted small fit">${m.kcal ? `${Math.round(m.kcal)} kcal` : ''}${m.protein_g ? `<br>${Math.round(m.protein_g)} g protein` : ''}</span></div>`).join('')}</div></div></details>`).join('')
+    : `<section class="card locked"><h2>No meal plan yet</h2><p class="muted">Your coach writes this each week from your targets, store prices and budget. Once Claude is connected, ask it to plan your meals for the week.</p></section>`;
+  const spent = plan ? plan.shopping.filter((s) => s.bought).reduce((s, x) => s + (x.est_price || 0), 0) : 0;
+  const shopping = plan && plan.shopping.length ? `<section class="card"><div class="row"><h3>Shopping list</h3><span class="muted small fit">${money(plan.est_cost)}${p.weekly_budget ? ` of ${money(p.weekly_budget)}` : ''}</span></div>
+      ${p.weekly_budget ? `<div class="meter"><i style="width:${Math.min(100, Math.round((plan.est_cost / p.weekly_budget) * 100))}%"></i></div>` : ''}
+      ${p.weekly_budget && plan.est_cost > p.weekly_budget ? `<div class="notice">This list is about ${money(plan.est_cost - p.weekly_budget)} over your budget.</div>` : ''}
+      <div class="list">${plan.shopping.map((s, i) => `<label><span class="row" style="gap:12px"><input type="checkbox" class="fit" data-action="bought" data-index="${i}" ${s.bought ? 'checked' : ''}><span class="${s.bought ? 'bought' : ''}">${esc(s.item)}${s.qty ? ` <span class="muted small">${esc(s.qty)}</span>` : ''}</span></span><span class="muted small">${money(s.est_price)}</span></label>`).join('')}</div>
+      <p class="muted small">Prices are estimates. ${spent ? `${money(spent)} ticked off so far.` : ''}</p></section>` : '';
+  const pr = f.prices;
+  const prices = `<section class="card"><h3>Store prices</h3>
+      <p class="small">${pr.store ? (pr.items ? `${pr.items} prices on file for ${esc(pr.store)}, last checked ${niceDate(pr.newest)}.` : `No prices on file for ${esc(pr.store)} yet.`) : 'Choose your store above first.'}</p>
+      ${pr.refresh_requested ? '<p class="muted small">Refresh requested. Your coach will look up current prices at the next review, or sooner if you ask.</p>'
+        : state.confirmRefresh ? '<div class="row"><button class="primary" data-action="refresh-go">Yes, look up live prices</button><button data-action="refresh-no">Cancel</button></div><p class="muted small">This asks Claude to search current flyers and prices for your store. It can take a while and uses your Claude plan.</p>'
+        : `<button data-action="refresh-ask" ${pr.store ? '' : 'disabled'}>Refresh prices</button>`}
+    </section>`;
+  const snap = d.photo_storage ? `<section class="card"><h3>Snap a meal</h3>
+      ${mr ? (mr.estimate && !mr.estimate.unclear ? `<div class="note"><b>${esc(mr.estimate.name)}</b><span>About ${mr.estimate.kcal} kcal, ${mr.estimate.protein_g} g protein. Confidence: ${esc(mr.estimate.confidence || 'low')}.</span></div><div class="row"><button class="primary" data-action="add-meal" data-kcal="${mr.estimate.kcal}" data-protein="${mr.estimate.protein_g}">Add to today</button><button data-action="clear-meal">Dismiss</button></div>` : `<p class="muted small">${mr.estimate ? 'That photo could not be read as a meal.' : 'Saved. Instant estimates need the API key; until then your coach reviews meal photos.'}</p>`) : '<p class="muted small">Take a photo and get a rough calorie estimate you can add to today.</p>'}
+      <label class="file">Take or choose a photo<input type="file" accept="image/*" capture="environment" data-upload data-kind="meal"></label></section>` : '';
+  return `<h1 class="page-title">Food</h1>${plan && plan.reason ? `<div class="note"><b>Coach's note</b><span>${esc(plan.reason)}</span></div>` : ''}${snap}<h3>This week</h3>${meals}${shopping}${prices}${setup}`;
+}
+
+/* ---------- reminders, Apple Health, health notes ---------- */
+
+const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+async function enableReminders(times) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error(standalone() ? 'This device does not support reminders.' : 'Add the app to your Home Screen first, then open it from there.');
+  if ((await Notification.requestPermission()) !== 'granted') throw new Error('Notifications are turned off for this app. Allow them in Settings, then try again.');
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+  const { key } = await api('GET', '/api/push/key');
+  const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+  const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw }));
+  await api('POST', '/api/push/subscribe', { endpoint: sub.endpoint });
+  await api('PUT', '/api/profile', { nudge_times: times });
+}
+
+function extraSettings() {
+  const p = state.data.profile;
+  const on = p.nudge_times.length > 0;
+  const origin = location.origin;
+  return `<section class="card">
+      <h3>Reminders</h3>
+      <p class="small">At most two a day, and only when there is something to do: a workout waiting, or a food check not yet logged.</p>
+      <form id="nudges" class="stack">
+        <div class="split"><label>Workout nudge<input type="time" name="t1" value="${p.nudge_times[0] || '17:30'}" required></label><label>Evening check<input type="time" name="t2" value="${p.nudge_times[1] || '21:00'}" required></label></div>
+        <div class="row"><button class="primary">${on ? 'Update times' : 'Turn on reminders'}</button>${on ? '<button type="button" data-action="nudges-off">Turn off</button>' : ''}</div>
+      </form>
+      ${standalone() ? '' : '<p class="muted small">On iPhone, reminders only work when the app is opened from your Home Screen.</p>'}
+    </section>
+    <details class="card" data-keep="health" ${state.open === 'health' ? 'open' : ''}><summary>Apple Health<span>${state.syncKey ? 'Key created' : 'Set up sync'}</span></summary>
+      <div class="inside">
+        <p class="small">An iPhone Shortcut sends your daily active calories, steps, workout calories and weight to the app.</p>
+        ${state.syncKey ? `<p class="small"><b>Your sync key.</b> Copy it now; it is shown once.</p><code>${esc(state.syncKey)}</code>` : '<button data-action="sync-key">Create a sync key</button><p class="muted small">Creating a new key stops the old one working.</p>'}
+        <ol class="steps">
+          <li>In the Shortcuts app, create a shortcut. Add Health actions to find today's Active Energy, Steps, Workouts and latest Weight, and total each one.</li>
+          <li>Add "Get Contents of URL" with the address below, method POST.</li>
+          <li>Add a header named Authorization with the value "Bearer " followed by your sync key.</li>
+          <li>Set the request body to JSON with any of: active_kcal, steps, workout_kcal, workout_minutes, weight_kg (or weight_lb).</li>
+          <li>Under Automation, run it every evening.</li>
+        </ol>
+        <code>${esc(origin)}/api/health/ingest</code>
+      </div></details>
+    <section class="card">
+      <h3>Health notes</h3>
+      <p class="small">Conditions and injuries your coach should plan around. This is not medical advice, and nothing here is shared outside your account.</p>
+      ${p.conditions.length ? `<div class="chips">${p.conditions.map((c, i) => `<button data-action="del-condition" data-index="${i}" aria-label="Remove ${esc(c)}">${esc(c)} ×</button>`).join('')}</div>` : ''}
+      <form id="condition" class="row"><label>Add one<input name="condition" placeholder="e.g. left knee injury, high cholesterol" required maxlength="80"></label><button class="fit" style="align-self:end">Add</button></form>
+    </section>`;
+}
+
+const TABS = { today: ['Today', todayScreen], body: ['Body', bodyScreen], plan: ['Plan', planScreen], food: ['Food', foodScreen], settings: ['More', settingsScreen] };
 
 function render() {
   const d = state.data;
@@ -462,6 +643,7 @@ function render() {
   state.view = 'tabs';
   $app.innerHTML = `<div class="shell">${TABS[state.tab][1]()}</div>
     <nav class="tabs" aria-label="Sections">${Object.entries(TABS).map(([k, [label]]) => `<button data-tab="${k}" ${state.tab === k ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</nav>`;
+  mountViewer();
 }
 
 /* ---------- events ---------- */
@@ -508,6 +690,14 @@ document.addEventListener('submit', (e) => {
       await api('PUT', '/api/profile', { primary_goal: v.primary_goal, fitness_level: v.fitness_level, minutes: Number(v.minutes), days_per_week: Number(v.days_per_week), equipment });
       await api('POST', '/api/plan/regenerate', {});
     }, 'Saved. Your plan is rebuilt.');
+  } else if (form.id === 'food') {
+    const diet = [...form.querySelectorAll('#diet [aria-pressed="true"]')].map((b) => b.dataset.diet);
+    state.open = null;
+    save(() => api('PUT', '/api/profile', { store: v.store, postal: v.postal, weekly_budget: numOrNull(v.weekly_budget), household: Number(v.household) || 1, diet }), 'Saved.');
+  } else if (form.id === 'nudges') {
+    save(() => enableReminders([v.t1, v.t2]), 'Reminders are on.');
+  } else if (form.id === 'condition') {
+    save(() => api('PUT', '/api/profile', { conditions: [...state.data.profile.conditions, v.condition] }), 'Noted. Your coach will plan around it.');
   } else if (form.id === 'profile') {
     // Height is typed in the units shown on screen, which are the ones saved before this change.
     save(() => api('PUT', '/api/profile', { sex: v.sex, birth_year: Number(v.birth_year), height_cm: lIn(v.height), activity: v.activity, units: v.units, review_cadence: v.review_cadence }), 'Saved.');
@@ -530,7 +720,7 @@ async function act(el) {
   // Workout
   if (a === 'start') {
     state.session = await api('POST', '/api/workout/start', el.dataset.day ? { day_index: Number(el.dataset.day) } : {});
-    state.finish = { effort: null, feeling: null };
+    state.finish = { effort: null, feeling: null, symptoms: [] };
     return go('workout');
   }
   if (a === 'resume') { state.session = state.session || state.data.workout.active; return go('workout'); }
@@ -561,15 +751,35 @@ async function act(el) {
   }
   if (a === 'to-finish') return go('finish');
   if (a === 'effort') { state.finish.effort = Number(el.dataset.value); return render(); }
+  if (a === 'symptom') { const v = el.dataset.value; const l = state.finish.symptoms; state.finish.symptoms = l.includes(v) ? l.filter((x) => x !== v) : [...l, v]; return render(); }
   if (a === 'feeling') { state.finish.feeling = state.finish.feeling === el.dataset.value ? null : el.dataset.value; return render(); }
   if (a === 'finish') {
-    const f = el.dataset.skip ? {} : { effort: state.finish.effort, feeling: state.finish.feeling };
+    const f = el.dataset.skip ? {} : { effort: state.finish.effort, feeling: state.finish.feeling, symptoms: state.finish.symptoms };
     state.result = await api('POST', `/api/workout/${state.session.id}/finish`, f);
     state.session = null;
     state.data = await api('GET', '/api/state');
     return go('celebrate');
   }
   if (a === 'cancel-workout') { await api('POST', `/api/workout/${state.session.id}/cancel`, {}); state.session = null; state.view = 'tabs'; return load(); }
+
+  // Body, photos, food, reminders
+  if (a === 'body-view') { state.bodyView = el.dataset.value; return render(); }
+  if (a === 'tone') { state.body.skin_tone = el.dataset.value; if (viewer) viewer.tone(el.dataset.value); el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); return api('PUT', '/api/profile', { skin_tone: el.dataset.value }); }
+  if (a === 'shape-reset') { state.body = await api('PUT', '/api/body', { overrides: {} }); return render(); }
+  if (a === 'del-photo') return save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Photo deleted.');
+  if (a === 'bought') { state.food.plan = await api('POST', '/api/food/bought', { index: Number(el.dataset.index) }); return render(); }
+  if (a === 'refresh-ask') { state.confirmRefresh = true; return render(); }
+  if (a === 'refresh-no') { state.confirmRefresh = false; return render(); }
+  if (a === 'refresh-go') { state.confirmRefresh = false; return save(() => api('POST', '/api/food/refresh', {}), 'Refresh requested.'); }
+  if (a === 'add-meal') {
+    const log = state.data.today_log || {};
+    state.mealResult = null;
+    return save(() => api('POST', '/api/day', { calories: (log.calories || 0) + Number(el.dataset.kcal), protein_g: (log.protein_g || 0) + Number(el.dataset.protein || 0) }), 'Added to today.');
+  }
+  if (a === 'clear-meal') { state.mealResult = null; return render(); }
+  if (a === 'nudges-off') return save(() => api('PUT', '/api/profile', { nudge_times: [] }), 'Reminders are off.');
+  if (a === 'sync-key') { state.syncKey = (await api('POST', '/api/sync-key', {})).key; state.open = 'health'; return render(); }
+  if (a === 'del-condition') return save(() => api('PUT', '/api/profile', { conditions: state.data.profile.conditions.filter((_, i) => i !== Number(el.dataset.index)) }), 'Removed.');
 
   // Everything else
   if (a === 'met') return save(() => api('POST', '/api/day', { target_met: el.dataset.value === '1' }), el.dataset.value === '1' ? streakLine('On target.') : 'Logged. Tomorrow is a fresh start.');
@@ -594,7 +804,29 @@ document.addEventListener('click', (e) => {
     return;
   }
   const el = e.target.closest('[data-action]');
-  if (el) act(el).catch((err) => toast(err.message));
+  if (el && el.type !== 'range') act(el).catch((err) => toast(err.message));
 });
+
+// Goal-shape sliders: the model follows the thumb; the change is saved when it is released.
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.dataset.action !== 'shape') return;
+  state.body.goal = { ...state.body.goal, [el.dataset.site]: Number(el.value) };
+  document.querySelector(`[data-out="${el.dataset.site}"]`).textContent = lOut(Number(el.value));
+  state.bodyView = 'goal';
+  state.bodyShown = state.body.goal;
+  if (viewer) viewer.morph(state.body.goal);
+});
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.dataset.action === 'shape') {
+    const overrides = { ...state.body.overrides, [el.dataset.site]: Number(el.value) };
+    api('PUT', '/api/body', { overrides }).then((b) => { state.body = b; }).catch((err) => toast(err.message));
+  } else if ('upload' in el.dataset) {
+    uploadPhoto(el).catch((err) => toast(err.message));
+  }
+});
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 load().catch(() => { $app.innerHTML = '<div class="auth-page"><main class="auth-card"><h1>All For One</h1><p class="error">The app could not reach its server. Check your connection and reload.</p></main></div>'; });

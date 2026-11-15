@@ -9,6 +9,17 @@ const REFRESH_SECONDS = 180 * 86400;
 const CODE_SECONDS = 300;
 const now = () => Math.floor(Date.now() / 1000);
 
+// A short record of each sign-in step, so a failed connection can be diagnosed. No secrets are stored.
+async function note(db, step, ok, detail = '') {
+  try {
+    await db.batch([
+      db.prepare(`INSERT INTO oauth_log (at, step, ok, detail) VALUES (?, ?, ?, ?)`).bind(new Date().toISOString(), step, ok ? 1 : 0, String(detail).slice(0, 300)),
+      db.prepare(`DELETE FROM oauth_log WHERE id <= (SELECT MAX(id) FROM oauth_log) - 200`),
+    ]);
+  } catch { /* logging must never break sign-in */ }
+}
+export { note as logStep };
+
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*', ...headers } });
 const oauthError = (error, description, status = 400) => json({ error, error_description: description }, status);
@@ -42,7 +53,8 @@ export async function register(db, request) {
   let body;
   try { body = await request.json(); } catch { return oauthError('invalid_client_metadata', 'Send JSON.'); }
   const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris.filter((u) => typeof u === 'string') : [];
-  if (!uris.length || !uris.every(validRedirect) || uris.length > 10) return oauthError('invalid_redirect_uri', 'Provide one to ten https redirect URIs.');
+  if (!uris.length || !uris.every(validRedirect) || uris.length > 10) { await note(db, 'register', false, JSON.stringify(body.redirect_uris)); return oauthError('invalid_redirect_uri', 'Provide one to ten https redirect URIs.'); }
+  await note(db, 'register', true, `${body.client_name || ''} auth=${body.token_endpoint_auth_method || ''}`);
   const client_id = randomToken(16);
   const name = typeof body.client_name === 'string' ? body.client_name.slice(0, 100) : 'Unnamed app';
   await db.prepare(`INSERT INTO oauth_clients (client_id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)`).bind(client_id, name, JSON.stringify(uris), new Date().toISOString()).run();
@@ -92,6 +104,7 @@ export async function authorize(db, request) {
   const url = new URL(request.url);
   if (request.method === 'GET') {
     const { error, client, fields } = await readRequest(db, url.searchParams);
+    await note(db, 'authorize_page', !error, error ? `status=${error.status} params=${[...url.searchParams.keys()].join(',')} method=${url.searchParams.get('code_challenge_method')}` : '');
     if (error) return error;
     return consentPage(client, fields, await sessionUser(db, request));
   }
@@ -108,7 +121,7 @@ export async function authorize(db, request) {
   const headers = new Headers();
   if (!user) {
     try { user = await checkPassword(db, form.get('email'), form.get('password')); } catch (e) {
-      if (e instanceof HttpError) return consentPage(client, fields, null, e.message);
+      if (e instanceof HttpError) { await note(db, 'authorize_signin', false, e.message); return consentPage(client, fields, null, e.message); }
       throw e;
     }
     headers.append('Set-Cookie', await sessionCookie(db, user.id));
@@ -116,6 +129,7 @@ export async function authorize(db, request) {
   const code = randomToken();
   await db.prepare(`INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, challenge, expires_at) VALUES (?, ?, ?, ?, ?, ?)`)
     .bind(await sha256(code), client.client_id, user.id, fields.redirect_uri, fields.code_challenge, now() + CODE_SECONDS).run();
+  await note(db, 'authorize_allow', true, '');
   back.searchParams.set('code', code);
   headers.set('Location', back.toString());
   headers.set('Cache-Control', 'no-store');
@@ -144,11 +158,15 @@ export async function token(db, request) {
     const row = await db.prepare(`SELECT client_id, user_id, redirect_uri, challenge, expires_at FROM oauth_codes WHERE code_hash = ?`).bind(hash).first();
     // A code works once: delete it before checking anything else.
     await db.prepare(`DELETE FROM oauth_codes WHERE code_hash = ?`).bind(hash).run();
-    if (!row || row.expires_at < now()) return oauthError('invalid_grant', 'The code is wrong or has expired.');
-    if (row.client_id !== form.get('client_id') || row.redirect_uri !== form.get('redirect_uri')) return oauthError('invalid_grant', 'The code was issued to a different app or address.');
+    const fail = async (why, message) => { await note(db, 'token', false, `${why} fields=${[...form.keys()].join(',')} type=${type}`); return oauthError('invalid_grant', message); };
+    if (!row || row.expires_at < now()) return fail('code_unknown_or_expired', 'The code is wrong or has expired.');
+    // The code is bound to its verifier (PKCE), so client_id and redirect_uri are checked only when the app sends them.
+    if (form.get('client_id') && row.client_id !== form.get('client_id')) return fail('client_mismatch', 'The code was issued to a different app.');
+    if (form.get('redirect_uri') && row.redirect_uri !== form.get('redirect_uri')) return fail('redirect_mismatch', 'The code was issued for a different address.');
     const verifier = form.get('code_verifier') || '';
     const digest = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
-    if (digest !== row.challenge) return oauthError('invalid_grant', 'The code verifier does not match.');
+    if (digest !== row.challenge) return fail(verifier ? 'verifier_mismatch' : 'verifier_missing', 'The code verifier does not match.');
+    await note(db, 'token', true, 'code');
     return issueTokens(db, row.client_id, row.user_id);
   }
   if (grant === 'refresh_token') {
@@ -158,6 +176,7 @@ export async function token(db, request) {
     await db.prepare(`DELETE FROM oauth_tokens WHERE token_hash = ?`).bind(hash).run();
     return issueTokens(db, row.client_id, row.user_id);
   }
+  await note(db, 'token', false, `grant=${grant} type=${type} fields=${[...form.keys()].join(',')}`);
   return oauthError('unsupported_grant_type', 'Use authorization_code or refresh_token.');
 }
 

@@ -17,9 +17,20 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 - **Gradual unlocks:** trends, body measurements and fine-tuning open after 3, 7 and 14 check-in days. A switch in More opens everything at once.
 - **Claude connector:** at `/mcp`. Claude can read everything above, log entries, search the exercise library, replace the workout plan and change the calorie target, each with a note you can read in the app.
 
-## Still to come
+## Also built
 
-Reminders, Apple Health sync, scheduled reviews, meal plans with store prices, photos, the 3D body, and health logging.
+- **3D body:** a rotatable model shaped by your measurements, with a projected goal shape you can adjust.
+- **Photos:** private progress and meal photos, with instant estimates when `ANTHROPIC_API_KEY` is set on the Worker.
+- **Food:** store, budget, household and dietary needs; a weekly meal plan and shopping list that Claude writes; a price list Claude fills in.
+- **Reminders:** up to two a day, sent only when there is something to do.
+- **Apple Health:** an endpoint an iPhone Shortcut posts to (`/api/health/ingest`).
+- **Reviews:** Claude reads a brief, adjusts targets and plans, and saves a summary you see on the home screen.
+- **Health notes:** conditions, and symptoms after a workout, with a clear stop message for warning signs.
+
+## Not done yet
+
+- The grocery price list starts empty; Claude fills it on the first refresh.
+- The recurring review task in Claude is created once the connector is working.
 
 ## Layout
 
@@ -30,6 +41,10 @@ worker/       The backend
   auth.js     Accounts, password hashing, session cookies
   store.js    Reads and writes tracking data (used by both the API and the connector)
   calc.js     Body fat, energy needs, and the calorie target a goal implies
+  coach.js    Reviews, Apple Health sync and reminders
+  meals.js    Meal plans, shopping list and the price list
+  photos.js   Photo storage and estimates
+  body.js     The measurements behind the 3D body
   workouts.js Workout plans, sessions, streaks, unlocks and the win messages
   planner.js  Builds the starter plan and searches the exercise library
   exercise-data.js  The exercise library (generated; see scripts/build-exercises.py)
@@ -53,7 +68,7 @@ Needs Node 22 or newer. There are no dependencies to install.
 
 Pushing to `main` runs the tests and deploys the Worker. The repository needs two secrets: `CLOUDFLARE_API_TOKEN` (with Workers Scripts and D1 edit permission) and `CLOUDFLARE_ACCOUNT_ID`.
 
-No Worker secrets are needed yet. The session signing key is generated on first use and stored in the database.
+One optional Worker secret: `ANTHROPIC_API_KEY`, for instant photo estimates. The deploy token also needs R2 edit permission for the photo bucket. The session signing key is generated on first use and stored in the database.
 
 ## Credits
 

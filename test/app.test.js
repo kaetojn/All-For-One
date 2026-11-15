@@ -26,7 +26,7 @@ function app() {
     let data; try { data = JSON.parse(text); } catch { data = text; }
     return { status: res.status, data, headers: res.headers };
   };
-  return { call, signOut: () => { cookie = ''; } };
+  return { call, env, signOut: () => { cookie = ''; } };
 }
 
 async function owner(a) {
@@ -307,4 +307,149 @@ test('claude can read and replace the workout plan', async () => {
   assert.equal(over.profile.days_per_week, 3);
   assert.deepEqual(await tool('get_workouts'), []);
   assert.deepEqual((await tool('update_profile', { equipment: ['dumbbell', 'bands'] })).equipment, ['dumbbell', 'bands']);
+});
+
+async function ready() {
+  const a = app();
+  await a.call('POST', '/api/signup', { email: 'me@example.com', password: 'correct horse battery' });
+  await a.call('POST', '/api/onboarding', ANSWERS);
+  return a;
+}
+
+test('symptoms after a workout: red flags say stop, others say take care', async () => {
+  const a = await ready();
+  const s = (await a.call('POST', '/api/workout/start', {})).data;
+  const fin = (await a.call('POST', `/api/workout/${s.id}/finish`, { effort: 9, symptoms: ['Knee', 'Chest pain', 'made up'] })).data;
+  assert.equal(fin.advice.level, 'stop');
+  assert.match(fin.advice.message, /doctor/);
+  const state = (await a.call('GET', '/api/state')).data;
+  assert.deepEqual(state.workout.done_today.symptoms, ['Knee', 'Chest pain']);
+  const { symptomAdvice } = await import('../worker/workouts.js');
+  assert.equal(symptomAdvice(['Knee']).level, 'care');
+  assert.equal(symptomAdvice([]), null);
+});
+
+test('apple health sync: key, ingest, calories land on the workout', async () => {
+  const a = await ready();
+  const s = (await a.call('POST', '/api/workout/start', {})).data;
+  await a.call('POST', `/api/workout/${s.id}/finish`, {});
+  const { key } = (await a.call('POST', '/api/sync-key', {})).data;
+  assert.match(key, /^afo_/);
+  assert.equal((await a.call('POST', '/api/health/ingest', { active_kcal: 500 }, { Authorization: 'Bearer afo_wrong' })).status, 401);
+  const ok = await a.call('POST', '/api/health/ingest', { active_kcal: '612 kcal', steps: 8421, workout_kcal: 310.4, workout_minutes: 42, weight_lb: 198.4 }, { Authorization: `Bearer ${key}` });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.data.saved, { active_kcal: true, steps: true, workout_kcal: true, weight: true });
+  const state = (await a.call('GET', '/api/state')).data;
+  assert.equal(state.workout.done_today.kcal, 310);
+  assert.ok(Math.abs(state.latest.weight.kg - 90) < 0.1);
+  assert.equal((await a.call('GET', '/api/health')).data[0].active_kcal, 612);
+});
+
+test('reviews: due by cadence, saved with a period', async () => {
+  const { reviewStatus } = await import('../worker/coach.js');
+  assert.equal(reviewStatus({ review_cadence: 'weekly', onboarded_at: '2026-11-01T00:00:00Z' }, null, '2026-11-08').due, true);
+  assert.equal(reviewStatus({ review_cadence: 'monthly', onboarded_at: '2026-11-01T00:00:00Z' }, null, '2026-11-08').days_until, 23);
+  assert.equal(reviewStatus({ review_cadence: 'weekly' }, { period_end: '2026-11-05' }, '2026-11-08').due, false);
+  const a = await ready();
+  assert.equal((await a.call('GET', '/api/state')).data.review.due, false);
+});
+
+test('reminders: quiet when there is nothing to say, signed when sent', async () => {
+  const { nudgeFor, runNudges, vapidHeader } = await import('../worker/coach.js');
+  const base = { workout: { week: { done: 1, goal: 3 }, next: { name: 'Upper A', exercises: [1, 2, 3], minutes: 40 }, active: null, done_today: null }, today_log: null, streak: { days: 4 } };
+  assert.match(nudgeFor(base, 0), /Upper A is ready/);
+  assert.equal(nudgeFor({ ...base, workout: { ...base.workout, done_today: {} } }, 0), null);
+  assert.equal(nudgeFor({ ...base, workout: { ...base.workout, week: { done: 3, goal: 3 } } }, 0), null, 'rest day');
+  assert.match(nudgeFor(base, 1), /4-day streak/);
+  assert.equal(nudgeFor({ ...base, today_log: { target_met: true } }, 1), null);
+
+  const a = await ready();
+  assert.equal((await a.call('POST', '/api/push/subscribe', { endpoint: 'https://evil.test/push' })).status, 400);
+  assert.equal((await a.call('POST', '/api/push/subscribe', { endpoint: 'https://web.push.apple.com/abc123' })).status, 200);
+  assert.equal((await a.call('PUT', '/api/profile', { nudge_times: ['25:00'] })).status, 400);
+  await a.call('PUT', '/api/profile', { nudge_times: ['17:30', '21:00'], timezone: 'UTC' });
+  const calls = [];
+  const send = async (url, init) => { calls.push({ url, init }); return new Response(null, { status: 201 }); };
+  const day = new Date().toISOString().slice(0, 10);
+  assert.equal(await runNudges(a.env.DB, new Date(`${day}T17:00:00Z`), send), 0, 'too early');
+  assert.equal(await runNudges(a.env.DB, new Date(`${day}T17:31:00Z`), send), 1);
+  assert.equal(await runNudges(a.env.DB, new Date(`${day}T17:40:00Z`), send), 0, 'only once per slot');
+  assert.equal(calls[0].url, 'https://web.push.apple.com/abc123');
+  assert.match(calls[0].init.headers.Authorization, /^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=[\w-]{80,}$/);
+  assert.match((await a.call('GET', '/api/nudge')).data.body, /is ready/);
+
+  // The signature verifies against the published key.
+  const header = await vapidHeader(a.env.DB, 'https://web.push.apple.com/abc123', 'me@example.com');
+  const [, jwt, k] = header.match(/t=([^,]+), k=(.+)$/);
+  const [h, c, sig] = jwt.split('.');
+  const pub = await crypto.subtle.importKey('raw', Buffer.from(k, 'base64url'), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  assert.equal(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, Buffer.from(sig, 'base64url'), Buffer.from(`${h}.${c}`)), true);
+  assert.equal(JSON.parse(Buffer.from(c, 'base64url')).aud, 'https://web.push.apple.com');
+});
+
+test('meal plans, prices and the refresh request', async () => {
+  const meals = await import('../worker/meals.js');
+  const a = await ready();
+  const db = a.env.DB;
+  const uid = (await db.prepare('SELECT id FROM users').first()).id;
+  await a.call('PUT', '/api/profile', { store: 'Metro', weekly_budget: 150, household: 2, diet: ['no dairy', 'low fat'], conditions: ['high cholesterol'] });
+  assert.equal((await a.call('GET', '/api/food')).data.plan, null);
+  await a.call('POST', '/api/food/refresh', {});
+  assert.equal((await a.call('GET', '/api/food')).data.prices.refresh_requested, true);
+  await assert.rejects(() => meals.setPrices(db, uid, { prices: [{ chain: 'Corner Shop', item: 'eggs', price: 4 }] }), /chain/);
+  await meals.setPrices(db, uid, { prices: [{ chain: 'Metro', item: 'Eggs', unit: '12 pack', price: 4.49 }] });
+  const food = (await a.call('GET', '/api/food')).data;
+  assert.equal(food.prices.items, 1);
+  assert.equal(food.prices.refresh_requested, false);
+  await meals.setMealPlan(db, uid, { days: [{ day: 'Mon', meals: [{ slot: 'dinner', name: 'Chicken and rice', kcal: 650, protein_g: 45, ingredients: ['chicken', 'rice'] }] }], shopping: [{ item: 'Chicken breast', qty: '1 kg', est_price: 13.2 }, { item: 'Rice', est_price: 4 }], reason: 'Inside budget.' });
+  const plan = (await a.call('GET', '/api/food')).data.plan;
+  assert.equal(plan.est_cost, 17.2);
+  assert.equal((await a.call('POST', '/api/food/bought', { index: 0 })).data.shopping[0].bought, true);
+});
+
+test('photos: stored privately, estimated when a key is set, owner only', async () => {
+  const photos = await import('../worker/photos.js');
+  const a = await ready();
+  const db = a.env.DB;
+  const uid = (await db.prepare('SELECT id FROM users').first()).id;
+  const files = new Map();
+  const env = { PHOTOS: { put: async (k, v, o) => files.set(k, { v, o }), get: async (k) => (files.has(k) ? { body: files.get(k).v, httpMetadata: files.get(k).o.httpMetadata, arrayBuffer: async () => files.get(k).v } : null), delete: async (k) => files.delete(k) }, ANTHROPIC_API_KEY: 'test-key' };
+  const req = (q, type = 'image/jpeg', size = 10) => new Request(`https://app.test/api/photos?${q}`, { method: 'POST', headers: { 'Content-Type': type }, body: new Uint8Array(size) });
+  await assert.rejects(() => photos.upload(db, env, uid, req('kind=body')), /Pose/);
+  await assert.rejects(() => photos.upload(db, env, uid, req('kind=meal', 'text/html')), /JPEG/);
+  let sentTo, sentBody;
+  const send = async (url, init) => { sentTo = url; sentBody = JSON.parse(init.body); return Response.json({ content: [{ type: 'text', text: 'Here: {"name":"Oatmeal","kcal":320,"protein_g":12,"items":["oats"],"confidence":"medium"}' }] }); };
+  const meal = await photos.upload(db, env, uid, req('kind=meal'), send);
+  assert.equal(sentTo, 'https://api.anthropic.com/v1/messages');
+  assert.equal(sentBody.messages[0].content[0].type, 'image');
+  assert.equal(meal.estimate.kcal, 320);
+  assert.equal(meal.estimated_by, 'app');
+  const body = await photos.upload(db, { ...env, ANTHROPIC_API_KEY: undefined }, uid, req('kind=body&pose=front'));
+  assert.equal(body.estimate, null, 'waits for review without a key');
+  assert.equal((await photos.listPhotos(db, uid, 'body')).length, 1);
+  await assert.rejects(() => photos.servePhoto(db, env, 'someone-else', body.id), /not found/);
+  assert.equal((await photos.servePhoto(db, env, uid, body.id)).headers.get('Cache-Control'), 'private, max-age=86400');
+  assert.equal((await photos.photoForClaude(db, env, uid, body.id))[0].type, 'image');
+  assert.equal((await photos.saveEstimate(db, uid, body.id, { estimate: { body_fat_low: 20, body_fat_high: 25 } })).estimated_by, 'claude');
+  await photos.deletePhoto(db, env, uid, body.id);
+  assert.equal(files.size, 1);
+});
+
+test('3D body numbers: defaults, projection toward the goal, overrides', async () => {
+  const { defaultMeasurements, projectGoal } = await import('../worker/body.js');
+  const d = defaultMeasurements('male', 180, 90);
+  assert.ok(d.waist > 85 && d.waist < 110, String(d.waist));
+  const g = projectGoal(d, { weight_kg: 90, target_weight_kg: 80, areas: ['shoulders'], overrides: { calf: 40 } });
+  assert.ok(g.waist < d.waist - 5);
+  assert.ok(g.shoulders > d.shoulders - 2, 'shoulders hold up when they are a target area');
+  assert.equal(g.calf, 40);
+  const a = await ready();
+  const model = (await a.call('GET', '/api/body')).data;
+  assert.equal(model.goal, null);
+  assert.deepEqual(model.measured, []);
+  const future = new Date(Date.now() + 150 * 86400000).toISOString().slice(0, 10);
+  await a.call('PUT', '/api/goal', { target_weight_kg: 82, target_date: future, target_areas: ['abs'] });
+  const withGoal = (await a.call('PUT', '/api/body', { overrides: { waist: 84, nonsense: 5 } })).data;
+  assert.equal(withGoal.goal.waist, 84);
+  assert.deepEqual(withGoal.overrides, { waist: 84 });
 });

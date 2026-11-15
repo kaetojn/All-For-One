@@ -2,10 +2,14 @@
 // Each tool is a thin wrapper over store.js, so Claude follows the same rules as the app.
 
 import { HttpError } from './auth.js';
-import { bearerUser } from './oauth.js';
+import { bearerUser, logStep } from './oauth.js';
 import * as store from './store.js';
 import * as workouts from './workouts.js';
 import { searchExercises } from './planner.js';
+import * as coach from './coach.js';
+import * as meals from './meals.js';
+import * as photos from './photos.js';
+import { bodyModel } from './body.js';
 import { SITES, ACTIVITY } from './calc.js';
 
 const VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
@@ -103,25 +107,103 @@ const TOOLS = [
     run: (db, uid, a) => workouts.setPlan(db, uid, a, 'claude'),
   },
   {
+    name: 'get_review_brief',
+    title: 'Get review brief',
+    description: 'Everything needed for a weekly or monthly review in one call: whether a review is due, the period it should cover, the current picture, history, finished workouts with effort and any symptoms, and the last review. A review should: read this, look at any new photos, adjust the calorie target and workout plan if the data supports it, then call save_review.',
+    inputSchema: { type: 'object', properties: {} },
+    readOnly: true,
+    run: (db, uid) => coach.reviewBrief(db, uid),
+  },
+  {
+    name: 'save_review',
+    title: 'Save review',
+    description: 'Record a finished review. The summary appears in the app: what went well, what changed (targets, plan) and why, and one thing to focus on next. Plain language, no diagnosis. If symptoms include chest pain, dizziness or shortness of breath, tell the user to see a doctor before training again.',
+    inputSchema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] },
+    run: (db, uid, a) => coach.saveReview(db, uid, a),
+  },
+  {
+    name: 'get_food_setup',
+    title: 'Get food setup',
+    description: 'Read the current meal plan and shopping list, the user\'s store, weekly grocery budget, household size and dietary needs (in the profile from get_overview), and whether the user has asked for a price refresh.',
+    inputSchema: { type: 'object', properties: {} },
+    readOnly: true,
+    run: (db, uid) => meals.foodState(db, uid),
+  },
+  {
+    name: 'get_prices',
+    title: 'Get prices',
+    description: `Read the stored grocery price list for a chain (${meals.CHAINS.join(', ')}), or all chains. Each price has the date it was last checked.`,
+    inputSchema: { type: 'object', properties: { chain: { type: 'string' } } },
+    readOnly: true,
+    run: (db, uid, a) => meals.getPrices(db, a.chain),
+  },
+  {
+    name: 'set_prices',
+    title: 'Set prices',
+    description: 'Add or update grocery prices after looking up current flyers and shelf prices for the user\'s store. Use real prices you found, never guesses. Clears the user\'s refresh request.',
+    inputSchema: { type: 'object', properties: { prices: { type: 'array', items: { type: 'object', properties: { chain: { type: 'string', enum: meals.CHAINS }, item: { type: 'string' }, unit: { type: 'string', description: 'For example "per kg", "12 pack", "900 g".' }, price: { type: 'number', description: 'Canadian dollars.' } }, required: ['chain', 'item', 'price'] } } }, required: ['prices'] },
+    run: (db, uid, a) => meals.setPrices(db, uid, a),
+  },
+  {
+    name: 'set_meal_plan',
+    title: 'Set meal plan',
+    description: 'Replace the weekly meal plan and shopping list. Hit the user\'s calorie and protein targets per day for the user alone, respect every dietary need and health condition in the profile, scale the shopping list to the household size, and keep the estimated cost inside the weekly budget using the stored prices for their store.',
+    inputSchema: { type: 'object', properties: { week_start: { type: 'string', description: 'YYYY-MM-DD, a Monday. Defaults to this week.' }, days: { type: 'array', minItems: 1, maxItems: 7, items: { type: 'object', properties: { day: { type: 'string' }, meals: { type: 'array', items: { type: 'object', properties: { slot: { type: 'string', enum: ['breakfast', 'lunch', 'dinner', 'snack'] }, name: { type: 'string' }, kcal: { type: 'number' }, protein_g: { type: 'number' }, ingredients: { type: 'array', items: { type: 'string' } } }, required: ['slot', 'name'] } } }, required: ['day', 'meals'] } }, shopping: { type: 'array', items: { type: 'object', properties: { item: { type: 'string' }, qty: { type: 'string' }, est_price: { type: 'number' }, store: { type: 'string' } }, required: ['item'] } }, est_cost: { type: 'number' }, reason: { type: 'string' } }, required: ['days'] },
+    run: (db, uid, a) => meals.setMealPlan(db, uid, a),
+  },
+  {
+    name: 'list_photos',
+    title: 'List photos',
+    description: 'List the user\'s progress photos (kind "body", with pose and any estimate) or meal photos (kind "meal"), newest first.',
+    inputSchema: { type: 'object', properties: { kind: { type: 'string', enum: ['body', 'meal'] } } },
+    readOnly: true,
+    run: (db, uid, a) => photos.listPhotos(db, uid, a.kind),
+  },
+  {
+    name: 'view_photo',
+    title: 'View photo',
+    description: 'Look at one photo by id. Progress photos are the user\'s own, shared for fitness tracking: describe visible change neutrally and practically.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    readOnly: true,
+    raw: true,
+    run: (db, uid, a, env) => photos.photoForClaude(db, env, uid, a.id),
+  },
+  {
+    name: 'save_photo_estimate',
+    title: 'Save photo estimate',
+    description: 'Save your estimate for a photo. Body: {"body_fat_low", "body_fat_high", "notes"}. Meal: {"name", "kcal", "protein_g", "items", "confidence"}. The tape-measure figure stays the official body-fat number; this is shown beside it.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, estimate: { type: 'object' } }, required: ['id', 'estimate'] },
+    run: (db, uid, a) => photos.saveEstimate(db, uid, a.id, a),
+  },
+  {
+    name: 'get_body_model',
+    title: 'Get body model',
+    description: 'Read the measurements behind the 3D body: current shape, projected goal shape, which sites were actually measured, and any manual overrides.',
+    inputSchema: { type: 'object', properties: {} },
+    readOnly: true,
+    run: (db, uid) => bodyModel(db, uid),
+  },
+  {
     name: 'update_profile',
     title: 'Update profile',
     description: `Update profile fields used by the formulas, plans and reviews. activity is one of: ${Object.keys(ACTIVITY).join(', ')}. review_cadence is weekly, biweekly or monthly. equipment replaces the whole list.`,
-    inputSchema: { type: 'object', properties: { sex: { type: 'string', enum: ['male', 'female'] }, birth_year: { type: 'integer' }, height_cm: { type: 'number' }, activity: { type: 'string', enum: Object.keys(ACTIVITY) }, units: { type: 'string', enum: ['metric', 'imperial'] }, timezone: { type: 'string' }, review_cadence: { type: 'string', enum: ['weekly', 'biweekly', 'monthly'] }, fitness_level: { type: 'string', enum: store.LEVELS }, primary_goal: { type: 'string', enum: store.GOALS }, minutes: { type: 'integer', description: 'Minutes per workout.' }, days_per_week: { type: 'integer' }, equipment: { type: 'array', items: { type: 'string', enum: store.EQUIPMENT } } } },
+    inputSchema: { type: 'object', properties: { sex: { type: 'string', enum: ['male', 'female'] }, birth_year: { type: 'integer' }, height_cm: { type: 'number' }, activity: { type: 'string', enum: Object.keys(ACTIVITY) }, units: { type: 'string', enum: ['metric', 'imperial'] }, timezone: { type: 'string' }, review_cadence: { type: 'string', enum: ['weekly', 'biweekly', 'monthly'] }, fitness_level: { type: 'string', enum: store.LEVELS }, primary_goal: { type: 'string', enum: store.GOALS }, conditions: { type: 'array', items: { type: 'string' }, description: 'Health conditions and injuries the user has told you about, in their words.' }, diet: { type: 'array', items: { type: 'string' }, description: 'Dietary needs, for example vegan, no dairy, low fat.' }, store: { type: 'string', enum: meals.CHAINS }, postal: { type: 'string' }, weekly_budget: { type: 'number' }, household: { type: 'integer' }, minutes: { type: 'integer', description: 'Minutes per workout.' }, days_per_week: { type: 'integer' }, equipment: { type: 'array', items: { type: 'string', enum: store.EQUIPMENT } } } },
     run: (db, uid, a) => store.updateProfile(db, uid, a),
   },
 ];
 
-const INSTRUCTIONS = 'All For One is the user\'s personal diet and fitness tracker. Stored values are metric (kg, cm); convert when the profile says imperial. Start with get_overview. Workouts come from a plan of ordered days; build plans with search_exercises and set_workout_plan. The tape-measure body-fat figure is the official one. When you change the calorie target, give a short reason the user can read in the app. Unsafe paces are allowed but must be flagged clearly.';
+const INSTRUCTIONS = 'All For One is the user\'s personal diet and fitness tracker. Stored values are metric (kg, cm); convert when the profile says imperial. Start with get_overview. Workouts come from a plan of ordered days; build plans with search_exercises and set_workout_plan. For a scheduled review, start with get_review_brief and end with save_review. Meal plans and grocery prices are yours to write (set_meal_plan, set_prices). Respect the conditions and dietary needs in the profile; never diagnose. The tape-measure body-fat figure is the official one. When you change the calorie target, give a short reason the user can read in the app. Unsafe paces are allowed but must be flagged clearly.';
 
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 
-async function handle(db, uid, msg) {
+async function handle(db, uid, msg, env) {
   if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') return rpcError(msg && msg.id, -32600, 'Invalid request');
   const isNotification = msg.id === undefined;
   switch (msg.method) {
     case 'initialize': {
       const asked = msg.params && msg.params.protocolVersion;
+      await logStep(db, 'mcp_initialize', true, `version=${asked}`);
       return rpcResult(msg.id, {
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: {} },
@@ -139,8 +221,8 @@ async function handle(db, uid, msg) {
       const tool = TOOLS.find((t) => t.name === (msg.params && msg.params.name));
       if (!tool) return rpcError(msg.id, -32602, 'Unknown tool');
       try {
-        const data = await tool.run(db, uid, (msg.params && msg.params.arguments) || {});
-        return rpcResult(msg.id, { content: [{ type: 'text', text: JSON.stringify(data) }] });
+        const data = await tool.run(db, uid, (msg.params && msg.params.arguments) || {}, env);
+        return rpcResult(msg.id, { content: tool.raw ? data : [{ type: 'text', text: JSON.stringify(data) }] });
       } catch (e) {
         if (!(e instanceof HttpError)) console.error('tool failed', tool.name, e);
         return rpcResult(msg.id, { content: [{ type: 'text', text: e instanceof HttpError ? e.message : 'Something went wrong on the server.' }], isError: true });
@@ -153,11 +235,12 @@ async function handle(db, uid, msg) {
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Mcp-Session-Id, Mcp-Protocol-Version', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 
-export async function mcp(db, request, origin) {
+export async function mcp(db, request, origin, env = {}) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (request.method !== 'POST') return new Response('Use POST.', { status: 405, headers: { Allow: 'POST', ...CORS } });
   const user = await bearerUser(db, request);
   if (!user) {
+    if (request.headers.get('Authorization')) await logStep(db, 'mcp', false, 'token not recognised or expired');
     return new Response(JSON.stringify({ error: 'invalid_token' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`, ...CORS },
@@ -170,7 +253,7 @@ export async function mcp(db, request, origin) {
   const batch = Array.isArray(body);
   const replies = [];
   for (const msg of batch ? body : [body]) {
-    const reply = await handle(db, user.id, msg);
+    const reply = await handle(db, user.id, msg, env);
     if (reply) replies.push(reply);
   }
   if (!replies.length) return new Response(null, { status: 202, headers: CORS });

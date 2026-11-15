@@ -35,11 +35,20 @@ export const GOALS = ['fat_loss', 'strength', 'consistency', 'general_health'];
 // What the exercise library calls each kind of kit. Bodyweight moves are always available.
 export const EQUIPMENT = ['dumbbell', 'barbell', 'kettlebells', 'bands', 'cable', 'machine', 'e-z curl bar', 'exercise ball', 'medicine ball', 'foam roll', 'other'];
 
-const PROFILE_COLUMNS = ['sex', 'birth_year', 'height_cm', 'activity', 'units', 'timezone', 'review_cadence', 'fitness_level', 'minutes', 'days_per_week', 'primary_goal', 'equipment', 'onboarded_at', 'show_all'];
+const PROFILE_COLUMNS = ['sex', 'birth_year', 'height_cm', 'activity', 'units', 'timezone', 'review_cadence', 'fitness_level', 'minutes', 'days_per_week', 'primary_goal', 'equipment', 'onboarded_at', 'show_all', 'conditions', 'nudge_times', 'skin_tone', 'diet', 'store', 'postal', 'weekly_budget', 'household'];
+const JSON_COLUMNS = ['equipment', 'conditions', 'nudge_times', 'diet'];
+export const DIETS = ['vegetarian', 'vegan', 'pescatarian', 'no dairy', 'no gluten', 'no red meat', 'no pork', 'halal', 'kosher', 'low fat', 'low sodium', 'low sugar'];
+export const SKIN_TONES = ['#f6d7c3', '#e9bd9b', '#d19c74', '#b07a52', '#8a5a3b', '#5f3d28', '#3d2618'];
+const list = (value, label, max, each) => {
+  if (!Array.isArray(value) || value.length > max) throw new HttpError(400, `${label} must be a list of up to ${max}.`);
+  return [...new Set(value.map((v) => String(v).trim().slice(0, each)).filter(Boolean))];
+};
 
 export async function getProfile(db, uid) {
   const row = await db.prepare(`SELECT ${PROFILE_COLUMNS.join(', ')} FROM profiles WHERE user_id = ?`).bind(uid).first();
-  return { ...row, equipment: JSON.parse(row.equipment || '[]'), show_all: !!row.show_all };
+  const out = { ...row, show_all: !!row.show_all };
+  for (const c of JSON_COLUMNS) out[c] = JSON.parse(row[c] || '[]');
+  return out;
 }
 
 export async function updateProfile(db, uid, input) {
@@ -82,8 +91,23 @@ export async function updateProfile(db, uid, input) {
     next.equipment = [...new Set(input.equipment)];
   }
   if ('show_all' in input) next.show_all = !!input.show_all;
+  if ('conditions' in input) next.conditions = list(input.conditions, 'Conditions', 12, 80);
+  if ('diet' in input) next.diet = list(input.diet, 'Dietary needs', 16, 40);
+  if ('nudge_times' in input) {
+    next.nudge_times = list(input.nudge_times, 'Reminder times', 2, 5);
+    if (!next.nudge_times.every((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t))) throw new HttpError(400, 'Reminder times must look like 17:30.');
+  }
+  if ('skin_tone' in input) {
+    if (!SKIN_TONES.includes(input.skin_tone)) throw new HttpError(400, 'Unknown skin tone.');
+    next.skin_tone = input.skin_tone;
+  }
+  if ('store' in input) next.store = input.store ? String(input.store).slice(0, 40) : null;
+  if ('postal' in input) next.postal = input.postal ? String(input.postal).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7) : null;
+  if ('weekly_budget' in input) next.weekly_budget = num(input.weekly_budget, 'Weekly budget', 10, 5000, { optional: true });
+  if ('household' in input) next.household = num(input.household, 'Household size', 1, 12, { integer: true });
   if (input.onboarded && !next.onboarded_at) next.onboarded_at = new Date().toISOString();
-  const stored = { ...next, equipment: JSON.stringify(next.equipment), show_all: next.show_all ? 1 : 0 };
+  const stored = { ...next, show_all: next.show_all ? 1 : 0 };
+  for (const c of JSON_COLUMNS) stored[c] = JSON.stringify(next[c] || []);
   await db.prepare(`UPDATE profiles SET ${PROFILE_COLUMNS.map((c) => `${c} = ?`).join(', ')}, updated_at = ? WHERE user_id = ?`)
     .bind(...PROFILE_COLUMNS.map((c) => stored[c] ?? null), new Date().toISOString(), uid).run();
   return next;
