@@ -137,17 +137,29 @@ export function shapeFor(data, { sex, height_cm, weight_kg, measurements = {}, m
 /* ---------- the figure ---------- */
 
 const CLOTH = new THREE.Color('#2a2824');
+const TEE = new THREE.Color('#5f8f79'), SHOE = new THREE.Color('#f6f2ea'), HAIR = new THREE.Color('#2b211b'), INK = new THREE.Color('#1b1a17');
+// The companion's cartoon proportions: a big head, big hands, shorter legs.
+const TOON_SCALE = { head: 2.0, hand_l: 1.3, hand_r: 1.3, thigh_l: 0.8, thigh_r: 0.8, foot_l: 1.25, foot_r: 1.25 };
+
+function toonRamp() {
+  const steps = new Uint8Array([205, 205, 205, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]);
+  const tex = new THREE.DataTexture(steps, 4, 1, THREE.RGBAFormat);
+  tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.needsUpdate = true;
+  return tex;
+}
 
 export class Figure {
-  constructor(data, tone = '#d19c74', female = false) {
-    this.data = data; this.female = female; this.tone = new THREE.Color(tone);
+  // style 'real' is the anatomical figure on the Body tab; 'toon' is the cartoon companion.
+  constructor(data, tone = '#d19c74', female = false, style = 'real') {
+    this.data = data; this.female = female; this.tone = new THREE.Color(tone); this.toon = style === 'toon';
     const g = (this.geometry = new THREE.BufferGeometry());
     g.setIndex(new THREE.BufferAttribute(data.index, 1));
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(data.base), 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(data.N * 3), 3));
     g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Array.from(data.skinIndex), 4));
     g.setAttribute('skinWeight', new THREE.BufferAttribute(data.skinWeight, 4));
-    this.material = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.58, metalness: 0, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color('#fff2e6') });
+    this.material = this.toon ? new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonRamp() })
+      : new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.58, metalness: 0, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color('#fff2e6') });
     this.mesh = new THREE.SkinnedMesh(g, this.material);
     this.mesh.frustumCulled = false;
     this.bones = data.meta.bones.map((b) => Object.assign(new THREE.Bone(), { name: b.name }));
@@ -155,6 +167,22 @@ export class Figure {
     this.skeleton = new THREE.Skeleton(this.bones);
     this.group = new THREE.Group();
     this.group.add(this.mesh);
+    if (this.toon) {
+      // An ink outline: the same skin drawn again slightly larger, back faces only.
+      const line = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+      line.onBeforeCompile = (shader) => { shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed += normalize(objectNormal) * 0.05;'); };
+      this.outline = new THREE.SkinnedMesh(g, line);
+      this.outline.frustumCulled = false;
+      this.mesh.add(this.outline);
+      // A friendlier face and hair, carried by the head bone.
+      const head = this.bones[data.bone.head];
+      const eye = () => { const e = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: INK })); const glint = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffffff' })); glint.position.set(0.35, 0.4, 0.75); e.add(glint); head.add(e); return e; };
+      this.eyes = [eye(), eye()];
+      this.hair = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5), new THREE.MeshToonMaterial({ color: HAIR, gradientMap: toonRamp() }));
+      head.add(this.hair);
+      this.smile = new THREE.Mesh(new THREE.TorusGeometry(1, 0.16, 6, 14, Math.PI * 0.7), new THREE.MeshBasicMaterial({ color: INK }));
+      head.add(this.smile);
+    }
     this.rot = {}; this.goal = {}; this.lift = 0; this.liftGoal = 0;
     this.pose = 'idle'; this.until = 0; this.after = 'idle'; this.morph = null; this.bound = false;
   }
@@ -163,15 +191,44 @@ export class Figure {
   rig(pos) {
     const joints = jointsOf(this.data, pos);
     this.joints = joints;
-    this.bones.forEach((bone) => bone.rotation.set(0, 0, 0));
+    this.bones.forEach((bone) => { bone.rotation.set(0, 0, 0); bone.scale.setScalar(1); });
     this.data.meta.bones.forEach((b, i) => { const h = joints[i].head, p = b.parent < 0 ? [0, 0, 0] : joints[b.parent].head; this.bones[i].position.set(h[0] - p[0], h[1] - p[1], h[2] - p[2]); });
     this.restY = this.bones[this.data.bone.Root].position.y;
     this.group.updateMatrixWorld(true);
     // The skin is bound in world space, so the bind matrix and the bones' inverses must be taken at the same moment.
     if (this.bound) { this.mesh.bindMatrix.copy(this.mesh.matrixWorld); this.mesh.bindMatrixInverse.copy(this.mesh.matrixWorld).invert(); this.skeleton.calculateInverses(); }
     else { this.mesh.bind(this.skeleton); this.bound = true; }
+    this.drop = 0;
+    if (this.toon) this.cartoon(pos, joints);
     this.limb = { thigh: Math.hypot(...joints[this.data.bone.thigh_l].head.map((x, k) => x - joints[this.data.bone.calf_l].head[k])), calf: Math.hypot(...joints[this.data.bone.calf_l].head.map((x, k) => x - joints[this.data.bone.foot_l].head[k])) };
   }
+
+  // Apply the cartoon proportions and place the face. Done after binding, so the skin stretches to follow.
+  cartoon(pos, joints) {
+    const { data } = this, B = data.bone;
+    if (this.outline.skeleton !== this.skeleton) this.outline.bind(this.skeleton, this.mesh.bindMatrix);
+    else { this.outline.bindMatrix.copy(this.mesh.bindMatrix); this.outline.bindMatrixInverse.copy(this.mesh.bindMatrixInverse); }
+    for (const [name, k] of Object.entries(TOON_SCALE)) this.bones[B[name]].scale.setScalar(k);
+    // Shorter legs lift the feet off the ground, so lower the whole figure by the same amount.
+    this.drop = (joints[B.thigh_l].head[1] - this.shape.lo) * (1 - TOON_SCALE.thigh_l);
+    const h = joints[B.head].head, local = (p) => [p[0] - h[0], p[1] - h[1], p[2] - h[2]];
+    const centres = data.meta.eyes.map((list) => { const o = [0, 0, 0]; for (const v of list) { o[0] += pos[v * 3]; o[1] += pos[v * 3 + 1]; o[2] += pos[v * 3 + 2]; } return o.map((x) => x / list.length); });
+    const gap = Math.abs(centres[0][0] - centres[1][0]);
+    this.eyes.forEach((e, i) => { const c = local(centres[i]); e.position.set(c[0] * 1.12, c[1] - gap * 0.08, c[2] + gap * 0.3); e.scale.set(gap * 0.22, gap * 0.3, gap * 0.12); });
+    // Skull size from the head's own vertices.
+    let top = -Infinity, back = Infinity, front = -Infinity, wide = 0, lips = -Infinity;
+    const mouthY = centres[0][1] - gap * 1.02;
+    for (let v = 0; v < data.N; v++) if (data.dominant[v] === B.head) { const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2]; if (y > top) top = y; if (Math.abs(y - mouthY) < gap * 0.25 && Math.abs(x) < gap * 0.3 && z > lips) lips = z; if (y > centres[0][1]) { if (z < back) back = z; if (z > front) front = z; if (Math.abs(x) > wide) wide = Math.abs(x); } }
+    const eyeY = centres[0][1], mid = local([0, eyeY + (top - eyeY) * 0.34, (front + back) / 2 - gap * 0.12]);
+    this.hair.position.set(mid[0], mid[1], mid[2]);
+    this.hair.scale.set(wide * 1.1, (top - eyeY) * 0.78, ((front - back) / 2) * 1.1);
+    this.hair.rotation.x = -0.5;
+    const m = local([0, mouthY + gap * 0.22, lips + gap * 0.03]);
+    this.smile.position.set(m[0], m[1], m[2]); this.smile.scale.setScalar(gap * 0.34); this.smile.rotation.set(0, 0, Math.PI * 1.15);
+  }
+
+  // How high the underside of the thighs is when seated, as a share of standing height. Used to sit on things.
+  get seat() { const B = this.data.bone, s = this.shape; return (this.joints[B.thigh_l].head[1] - s.lo - 0.75 - this.drop) / (s.hi - s.lo); }
 
   paint(shape) {
     const { data } = this, pos = shape.pos, B = data.bone, c = this.geometry.attributes.color.array;
@@ -179,8 +236,17 @@ export class Figure {
     const hip = j[B.pelvis].head[1], knee = j[B.calf_l].head[1], top = j[B.neck_01].head[1], L = top - hip;
     const shortsTop = hip + L * 0.2, shortsBottom = hip - (hip - knee) * 0.42;
     const low = new Set([B.pelvis, B.spine_01, B.thigh_l, B.thigh_r]), up = new Set([B.spine_02, B.spine_03, B.clavicle_l, B.clavicle_r]);
+    const tee = new Set([B.spine_02, B.spine_03, B.clavicle_l, B.clavicle_r, B.spine_01]), sleeve = new Set([B.upperarm_l, B.upperarm_r]), shoe = new Set([B.foot_l, B.foot_r, B.ball_l, B.ball_r]);
+    const elbow = j[B.lowerarm_l].head, shoulder = j[B.upperarm_l].head, eyeSet = this.toon ? new Set(data.meta.eyes.flat()) : null;
     for (let v = 0; v < data.N; v++) {
       const y = pos[v * 3 + 1], d = data.dominant[v];
+      if (this.toon) {
+        // The companion wears a tee, shorts and trainers.
+        const reach = (Math.abs(pos[v * 3]) - shoulder[0]) / (elbow[0] - shoulder[0]);
+        const col = shoe.has(d) ? SHOE : low.has(d) && y < shortsTop && y > shortsBottom ? CLOTH : (tee.has(d) && y >= shortsTop && y < top - L * 0.02) || (sleeve.has(d) && reach < 0.5) ? TEE : this.tone;
+        c[v * 3] = col.r; c[v * 3 + 1] = col.g; c[v * 3 + 2] = col.b;
+        continue;
+      }
       // Clothing is painted on, fading over a short band so the hem follows the body smoothly.
       const band = (lo, hi) => Math.max(0, Math.min(1, (y - lo) / 0.22)) * Math.max(0, Math.min(1, (hi - y) / 0.22));
       let cloth = low.has(d) ? band(shortsBottom, shortsTop) : 0;
@@ -200,6 +266,7 @@ export class Figure {
     this.mesh.scale.setScalar(1 / size); this.mesh.position.y = -shape.lo / size;
     if (animate && from) this.morph = { from: from.pos, to: shape.pos, t: 0 }; else this.apply(shape.pos);
     this.rig(shape.pos);
+    this.mesh.position.y -= this.drop / size;
     this.paint(shape);
   }
 

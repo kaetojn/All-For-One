@@ -126,7 +126,7 @@ test('tracking: weight, measurements, day log, goal and target flow into the ove
 });
 
 async function connect(a) {
-  const reg = await a.call('POST', '/oauth/register', { client_name: 'Claude', redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] });
+  const reg = await a.call('POST', '/register', { client_name: 'Claude', redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] });
   assert.equal(reg.status, 201);
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
@@ -143,7 +143,8 @@ test('claude connector: discovery, sign-in, tokens and tools', async () => {
   assert.equal(unauth.status, 401);
   assert.match(unauth.headers.get('WWW-Authenticate'), /resource_metadata="https:\/\/app\.test\/\.well-known\/oauth-protected-resource"/);
   assert.equal((await a.call('GET', '/.well-known/oauth-protected-resource/mcp')).data.resource, ORIGIN + '/mcp');
-  assert.equal((await a.call('GET', '/.well-known/oauth-authorization-server')).data.token_endpoint, ORIGIN + '/oauth/token');
+  assert.equal((await a.call('GET', '/.well-known/oauth-authorization-server')).data.token_endpoint, ORIGIN + '/token');
+  assert.equal((await a.call('GET', '/authorize?client_id=nope')).status, 400, 'the short path reaches the sign-in page, not the app');
 
   const { verifier, params } = await connect(a);
   const pageRes = await a.call('GET', '/oauth/authorize?' + new URLSearchParams(params));

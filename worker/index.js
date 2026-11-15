@@ -100,19 +100,21 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
-    const dynamic = path.startsWith('/api/') || path.startsWith('/oauth/') || path.startsWith('/.well-known/') || path === '/mcp';
+    // Sign-in for Claude lives at /authorize, /token and /register. The /oauth/... spellings are kept as aliases.
+    const signin = ['/authorize', '/token', '/register'].includes(path) ? path : path.startsWith('/oauth/') ? path.slice(6) : null;
+    const dynamic = path.startsWith('/api/') || signin || path.startsWith('/.well-known/') || path === '/mcp';
     if (!dynamic) return env.ASSETS.fetch(request);
     try {
       await ensureSchema(env.DB);
       if (path === '/mcp') return await mcp(env.DB, request, url.origin, env);
       if (path.startsWith('/.well-known/oauth-authorization-server')) return oauth.metadata(url.origin);
       if (path.startsWith('/.well-known/oauth-protected-resource')) return oauth.resourceMetadata(url.origin);
-      if (path.startsWith('/oauth/') && request.method === 'OPTIONS') {
+      if (signin && request.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'POST, OPTIONS' } });
       }
-      if (path === '/oauth/register' && request.method === 'POST') return await oauth.register(env.DB, request);
-      if (path === '/oauth/authorize' && (request.method === 'GET' || request.method === 'POST')) return await oauth.authorize(env.DB, request);
-      if (path === '/oauth/token' && request.method === 'POST') return await oauth.token(env.DB, request);
+      if (signin === '/register' && request.method === 'POST') return await oauth.register(env.DB, request);
+      if (signin === '/authorize' && (request.method === 'GET' || request.method === 'POST')) return await oauth.authorize(env.DB, request);
+      if (signin === '/token' && request.method === 'POST') return await oauth.token(env.DB, request);
       if (path.startsWith('/api/')) return await api(env.DB, request, path, env);
       return json({ error: 'Not found.' }, 404);
     } catch (e) {

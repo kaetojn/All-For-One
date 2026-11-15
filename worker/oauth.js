@@ -27,9 +27,9 @@ const oauthError = (error, description, status = 400) => json({ error, error_des
 export function metadata(origin) {
   return json({
     issuer: origin,
-    authorization_endpoint: `${origin}/oauth/authorize`,
-    token_endpoint: `${origin}/oauth/token`,
-    registration_endpoint: `${origin}/oauth/register`,
+    authorization_endpoint: `${origin}/authorize`,
+    token_endpoint: `${origin}/token`,
+    registration_endpoint: `${origin}/register`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
@@ -39,7 +39,7 @@ export function metadata(origin) {
 }
 
 export function resourceMetadata(origin) {
-  return json({ resource: `${origin}/mcp`, authorization_servers: [origin], bearer_methods_supported: ['header'], scopes_supported: ['tracking'] });
+  return json({ resource: `${origin}/mcp`, authorization_servers: [origin], bearer_methods_supported: ['header'], resource_name: 'All For One' });
 }
 
 function validRedirect(uri) {
@@ -94,7 +94,7 @@ function consentPage(client, fields, user, message) {
   return page('Connect to All For One', `<h1>Connect ${esc(client.name)}</h1>
     <p>${esc(client.name)} is asking to read and update your All For One data: profile, goals, weight, measurements, daily logs and calorie targets.</p>
     ${message ? `<p class="error">${esc(message)}</p>` : ''}
-    <form method="post" action="/oauth/authorize">${hidden}${signIn}
+    <form method="post" action="/authorize">${hidden}${signIn}
       <button class="primary" name="decision" value="allow">Allow</button>
       <button class="ghost" name="decision" value="deny" formnovalidate>Cancel</button>
     </form>`, message ? 401 : 200);

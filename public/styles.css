@@ -37,9 +37,9 @@ h3 { font-size: .68rem; font-weight: 600; letter-spacing: .16em; text-transform:
 
 .hello { display: flex; align-items: center; gap: 16px; padding: 2px; }
 .hello p { color: var(--muted); }
-#mascot { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .35s; filter: drop-shadow(0 6px 8px rgba(27, 26, 23, .16)); }
+#mascot { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .35s; }
 .perch { display: inline-block; flex: 0 0 auto; }
-.seat-row { height: 0; margin-bottom: -22px; position: relative; }
+.seat-row { height: 44px; margin-bottom: -22px; position: relative; }
 .seat { position: absolute; right: 30px; bottom: 0; width: 0; height: 0; }
 .hello { min-height: 64px; }
 

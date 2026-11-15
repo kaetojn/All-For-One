@@ -14,7 +14,7 @@ out = Path(__file__).resolve().parent.parent / 'public' / 'body'
 out.mkdir(parents=True, exist_ok=True)
 
 # ---- base mesh: keep the body and the eyeballs; drop clothing helpers
-verts, faces, group, cubes = [], [], '', {}
+verts, faces, group, cubes, eyes = [], [], '', {}, {'helper-l-eye': set(), 'helper-r-eye': set()}
 KEEP = lambda g: g == 'body' or g in ('helper-l-eye', 'helper-r-eye')
 for line in (src / '3dobjs' / 'base.obj').read_text().splitlines():
     if line.startswith('v '):
@@ -25,6 +25,8 @@ for line in (src / '3dobjs' / 'base.obj').read_text().splitlines():
         cubes.setdefault(group, set()).update(int(p.split('/')[0]) - 1 for p in line.split()[1:])
     elif line.startswith('f ') and KEEP(group):
         idx = [int(p.split('/')[0]) - 1 for p in line.split()[1:]]
+        if group in eyes:
+            eyes[group].update(idx)
         faces += [[idx[0], idx[1], idx[2]]] + ([[idx[0], idx[2], idx[3]]] if len(idx) == 4 else [])
 verts = np.array(verts, dtype=np.float64)
 faces = np.array(faces)
@@ -117,7 +119,7 @@ put('skinIndex', skin_i)
 put('skinWeight', skin_w)
 
 (out / 'body.bin').write_bytes(bytes(blob))
-(out / 'body.json').write_text(json.dumps({'source': 'MakeHuman / MPFB2 assets, CC0, via github.com/naver/anny', 'vertices': N, 'scale': SCALE, 'bones': bones, 'layout': layout}, separators=(',', ':')))
+(out / 'body.json').write_text(json.dumps({'source': 'MakeHuman / MPFB2 assets, CC0, via github.com/naver/anny', 'vertices': N, 'scale': SCALE, 'bones': bones, 'eyes': [sorted(remap[i] for i in eyes['helper-l-eye']), sorted(remap[i] for i in eyes['helper-r-eye'])], 'layout': layout}, separators=(',', ':')))
 print('vertices', N, 'triangles', len(tris), 'bones', len(bones), 'bytes', len(blob))
 print('height dm', float(base[drawn][:, 1].max() - base[drawn][:, 1].min()), 'bounds', base[drawn].min(axis=0).round(2), base[drawn].max(axis=0).round(2))
 print([b['name'] for b in bones])
