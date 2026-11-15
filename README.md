@@ -29,14 +29,15 @@ worker/       The backend
   oauth.js    Sign-in flow for Claude
   mcp.js      The connector's tools
 public/       The web app, served as written (no build step)
-test/         Tests, a stand-in database, and a local preview server
+test/         Tests and a stand-in database
+scripts/      A local preview server
 ```
 
 ## Run it locally
 
 ```
 node --test                 # run the tests
-node test/dev-server.js     # preview at http://localhost:8787 (data is lost when it stops)
+node scripts/dev-server.js     # preview at http://localhost:8787 (data is lost when it stops)
 ```
 
 Needs Node 22 or newer. There are no dependencies to install.

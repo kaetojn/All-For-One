@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import worker from '../worker/index.js';
-import { fakeD1 } from './d1.js';
+import { fakeD1 } from '../test/d1.js';
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
 const root = join(import.meta.dirname, '..', 'public');
