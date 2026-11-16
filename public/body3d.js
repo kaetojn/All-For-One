@@ -28,7 +28,7 @@ export async function mountBody(canvas, model, which, style = 'shaded') {
   const scene = new THREE.Scene();
   lights(scene);
   const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 30);
-  const figure = new Figure(data, model.skin_tone);
+  const figure = new Figure(data, model.skin_tone || '#d19c74');
   figure.setShape(shapeFor(data, shapeInputs(model, which)));
   figure.setStyle(style);
   figure.setDefinition(definitionAt(model.sex, which === 'goal' ? model.target_body_fat : model.body_fat));

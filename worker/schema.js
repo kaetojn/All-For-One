@@ -54,6 +54,9 @@ export const MIGRATIONS = [
     `CREATE TABLE photos (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, pose TEXT, date TEXT NOT NULL, object_key TEXT NOT NULL, estimate TEXT, estimated_by TEXT, created_at TEXT NOT NULL)`,
     `CREATE INDEX photos_user ON photos (user_id, kind, date)`,
   ],
+  [
+    `ALTER TABLE profiles ADD COLUMN build TEXT`,
+  ],
 ];
 
 let ready = null;

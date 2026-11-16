@@ -35,7 +35,8 @@ export const GOALS = ['fat_loss', 'strength', 'consistency', 'general_health'];
 // What the exercise library calls each kind of kit. Bodyweight moves are always available.
 export const EQUIPMENT = ['dumbbell', 'barbell', 'kettlebells', 'bands', 'cable', 'machine', 'e-z curl bar', 'exercise ball', 'medicine ball', 'foam roll', 'other'];
 
-const PROFILE_COLUMNS = ['sex', 'birth_year', 'height_cm', 'activity', 'units', 'timezone', 'review_cadence', 'fitness_level', 'minutes', 'days_per_week', 'primary_goal', 'equipment', 'onboarded_at', 'show_all', 'conditions', 'nudge_times', 'skin_tone', 'diet', 'store', 'postal', 'weekly_budget', 'household'];
+const PROFILE_COLUMNS = ['sex', 'birth_year', 'height_cm', 'activity', 'units', 'timezone', 'review_cadence', 'fitness_level', 'minutes', 'days_per_week', 'primary_goal', 'equipment', 'onboarded_at', 'show_all', 'conditions', 'nudge_times', 'skin_tone', 'diet', 'store', 'postal', 'weekly_budget', 'household', 'build'];
+export const BUILDS = ['lean', 'muscular', 'bodybuilder'];
 const JSON_COLUMNS = ['equipment', 'conditions', 'nudge_times', 'diet'];
 export const DIETS = ['vegetarian', 'vegan', 'pescatarian', 'no dairy', 'no gluten', 'no red meat', 'no pork', 'halal', 'kosher', 'low fat', 'low sodium', 'low sugar'];
 export const SKIN_TONES = ['#f6d7c3', '#e9bd9b', '#d19c74', '#b07a52', '#8a5a3b', '#5f3d28', '#3d2618'];
@@ -98,8 +99,13 @@ export async function updateProfile(db, uid, input) {
     if (!next.nudge_times.every((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t))) throw new HttpError(400, 'Reminder times must look like 17:30.');
   }
   if ('skin_tone' in input) {
-    if (!SKIN_TONES.includes(input.skin_tone)) throw new HttpError(400, 'Unknown skin tone.');
-    next.skin_tone = input.skin_tone;
+    // null (or 'neutral') is the default: an uncoloured sketch.
+    if (input.skin_tone !== null && input.skin_tone !== 'neutral' && !SKIN_TONES.includes(input.skin_tone)) throw new HttpError(400, 'Unknown skin tone.');
+    next.skin_tone = SKIN_TONES.includes(input.skin_tone) ? input.skin_tone : null;
+  }
+  if ('build' in input) {
+    if (!BUILDS.includes(input.build)) throw new HttpError(400, `Build must be one of: ${BUILDS.join(', ')}.`);
+    next.build = input.build;
   }
   if ('store' in input) next.store = input.store ? String(input.store).slice(0, 40) : null;
   if ('postal' in input) next.postal = input.postal ? String(input.postal).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7) : null;

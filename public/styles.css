@@ -200,3 +200,17 @@ button.primary.armed { background: var(--stop); border-color: var(--stop); color
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .demo img + img { display: none; }
 }
+
+/* The body sketch */
+.sketch { aspect-ratio: 1 / 2; max-height: 520px; margin: 0 auto; width: 100%; }
+.sketch svg { width: 100%; height: 100%; display: block; }
+.sketch .sway { animation: sway 5s ease-in-out infinite; }
+.sketch .pop { animation: pop-lines 1.4s ease-in-out infinite; }
+.sketch .zzz text { animation: zzz 3s ease-in-out infinite; }
+.sketch .zzz text:nth-child(2) { animation-delay: .5s; } .sketch .zzz text:nth-child(3) { animation-delay: 1s; }
+.sketch .drop { animation: drop 2.4s ease-in infinite; }
+@keyframes sway { 0%, 100% { transform: rotate(-.6deg); } 50% { transform: rotate(.6deg); } }
+@keyframes pop-lines { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@keyframes zzz { 0%, 100% { opacity: .3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4px); } }
+@keyframes drop { 0% { opacity: 0; transform: translateY(-3px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(10px); } }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
