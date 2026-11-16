@@ -15,7 +15,7 @@ export function shapeInputs(model, which) {
   };
 }
 
-export async function mountBody(canvas, model, which) {
+export async function mountBody(canvas, model, which, style = 'shaded') {
   const data = await loadBody(model.sex);
   const renderer = makeRenderer(canvas);
   const scene = new THREE.Scene();
@@ -23,6 +23,7 @@ export async function mountBody(canvas, model, which) {
   const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 30);
   const figure = new Figure(data, model.skin_tone);
   figure.setShape(shapeFor(data, shapeInputs(model, which)));
+  figure.setStyle(style);
   scene.add(figure.group);
 
   let yaw = 0.45, look = 0.47, dist = 2.75, touched = false, alive = true, last = performance.now();
@@ -58,6 +59,7 @@ export async function mountBody(canvas, model, which) {
   return {
     show(nextModel, nextWhich, animate = true) { const shape = shapeFor(data, shapeInputs(nextModel, nextWhich)); figure.setShape(shape, animate); if (nextWhich === 'goal') figure.play('flex', 1600); return shape; },
     tone(hex) { figure.setTone(hex); },
+    style(next) { figure.setStyle(next); },
     destroy() { alive = false; },
   };
 }

@@ -4,14 +4,14 @@
 // Design rules this file follows:
 //   - One anchor on the home screen (today's workout). Everything else opens on tap.
 //   - Logging is confirm-not-type: values come pre-filled and one tap completes an exercise.
-//   - Extra screens unlock as the habit forms (see `unlocks` from the server).
+//   - Everything is available from day one.
 
 const $app = document.getElementById('app');
 const $toast = document.getElementById('toast');
 const state = {
   data: null, tab: 'today', view: 'tabs', history: null, targets: null, plan: null, authError: '',
   session: null, open: null, result: null, finish: { effort: null, feeling: null, symptoms: [] },
-  body: null, bodyView: 'now', bodyShown: null, photos: null, food: null, mealResult: null, confirmRefresh: false, syncKey: null,
+  body: null, bodyView: 'now', bodyShown: null, bodyStyle: 'shaded', photos: null, food: null, mealResult: null, confirmRefresh: false, syncKey: null,
   intro: { step: 0, units: 'metric', equipment: [] },
 };
 
@@ -28,7 +28,6 @@ const FEELINGS = ['Strong', 'Good', 'Tired', 'Sore', 'Drained'];
 const SYMPTOMS = ['Knee', 'Lower back', 'Shoulder', 'Wrist', 'Dizzy', 'Chest pain', 'Short of breath'];
 const RED_FLAGS = ['Dizzy', 'Chest pain', 'Short of breath']; // the same list the server uses for stop advice
 const EFFORT = ['', 'Very easy', 'Easy', 'Easy', 'Comfortable', 'Moderate', 'Moderate', 'Hard', 'Hard', 'Very hard', 'All out'];
-const UNLOCK_AT = { trends: 3, body: 7, fine_tuning: 14 };
 const LB = 2.20462;
 const IN = 2.54;
 
@@ -320,41 +319,63 @@ function celebrateScreen() {
 
 /* ---------- progress ---------- */
 
-function locked(key, title, text) {
-  const have = state.data.streak.active_days;
-  const need = UNLOCK_AT[key];
-  return `<section class="card locked"><h2>${title}</h2><p class="muted">${text}</p>
-    <div style="width:100%;max-width:220px">${segments(Math.min(have, need), need)}</div>
-    <p class="muted small">${have} of ${need} check-in days. Any workout, food check or weigh-in counts.</p></section>`;
-}
-
-function chart(points, goal) {
-  if (points.length < 2) return `<p class="muted small">Log weight on two or more days to see your trend.</p>`;
+// Weight over time. `proj` adds a dashed line from today to where the current calorie target leads.
+function chart(points, goal, proj) {
+  if (points.length < 2 && !(points.length && proj)) return `<p class="muted small">Log weight on two or more days to see your trend.</p>`;
   const W = 320, H = 150, L = 34, R = 10, T = 12, B = 22;
   const xs = points.map((p) => Date.parse(p.date));
   const ys = points.map((p) => p.v);
-  let lo = Math.min(...ys, goal ?? Infinity), hi = Math.max(...ys, goal ?? -Infinity);
+  const end = proj ? Math.max(Date.parse(proj.date), xs[xs.length - 1]) : xs[xs.length - 1];
+  let lo = Math.min(...ys, goal ?? Infinity, proj ? proj.v : Infinity), hi = Math.max(...ys, goal ?? -Infinity, proj ? proj.v : -Infinity);
   const pad = Math.max(0.5, (hi - lo) * 0.12); lo -= pad; hi += pad;
-  const x = (t) => L + ((t - xs[0]) / (xs[xs.length - 1] - xs[0] || 1)) * (W - L - R);
+  const x = (t) => L + ((t - xs[0]) / (end - xs[0] || 1)) * (W - L - R);
   const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
   const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(xs[i]).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
-  const last = points[points.length - 1];
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight from ${niceDate(points[0].date)} to ${niceDate(last.date)}: ${points[0].v} to ${last.v} ${wUnit()}">
+  const last = points[points.length - 1], lx = x(xs[xs.length - 1]);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight from ${niceDate(points[0].date)}: ${points[0].v} to ${last.v} ${wUnit()}${proj ? `, projected ${proj.v} by ${niceDate(proj.date)}` : ''}">
     <text x="0" y="${y(hi - pad) + 4}">${r1(hi - pad)}</text><text x="0" y="${y(lo + pad) + 4}">${r1(lo + pad)}</text>
-    ${goal != null ? `<line x1="${L}" x2="${W - R}" y1="${y(goal)}" y2="${y(goal)}" stroke-dasharray="3 5" style="stroke:var(--good)"/><text x="${W - R}" y="${y(goal) - 5}" text-anchor="end" style="fill:var(--good)">goal ${goal}</text>` : ''}
-    <path class="area" d="${path}L${x(xs[xs.length - 1]).toFixed(1)},${H - B}L${L},${H - B}Z"/><path class="line" d="${path}"/><circle cx="${x(xs[xs.length - 1])}" cy="${y(last.v)}" r="5.5"/>
-    <text x="${L}" y="${H - 4}">${niceDate(points[0].date)}</text><text x="${W - R}" y="${H - 4}" text-anchor="end">${niceDate(last.date)}</text>
+    ${goal != null ? `<line x1="${L}" x2="${W - R}" y1="${y(goal)}" y2="${y(goal)}" stroke-dasharray="3 5" style="stroke:var(--good)"/><text x="${L}" y="${y(goal) - 5}" style="fill:var(--good)">goal ${goal}</text>` : ''}
+    ${points.length > 1 ? `<path class="area" d="${path}L${lx.toFixed(1)},${H - B}L${L},${H - B}Z"/><path class="line" d="${path}"/>` : ''}
+    ${proj ? `<path d="M${lx.toFixed(1)},${y(last.v).toFixed(1)}L${x(Date.parse(proj.date)).toFixed(1)},${y(proj.v).toFixed(1)}" fill="none" stroke-dasharray="2 4" style="stroke:var(--accent);stroke-width:1.6"/><circle cx="${x(Date.parse(proj.date))}" cy="${y(proj.v)}" r="3" style="fill:var(--card);stroke:var(--accent);stroke-width:1.6"/>` : ''}
+    <circle cx="${lx}" cy="${y(last.v)}" r="5.5"/>
+    <text x="${L}" y="${H - 4}">${niceDate(points[0].date)}</text><text x="${W - R}" y="${H - 4}" text-anchor="end">${niceDate(new Date(end).toISOString().slice(0, 10))}</text>
   </svg>`;
 }
 
+// One line on where the plan leads.
+function projectionLine(p, goalWeight) {
+  if (!p) return '';
+  const pace = p.weekly_change_kg ? `${p.weekly_change_kg > 0 ? 'gaining' : 'losing'} about ${Math.abs(wOut(p.weekly_change_kg))} ${wUnit()} a week` : 'holding steady';
+  const land = p.weight_at_goal_date_kg != null ? ` That puts you near ${wOut(p.weight_at_goal_date_kg)} ${wUnit()} on ${niceDate(p.goal_date)}.` : '';
+  const reach = goalWeight && p.reach_date ? ` You would reach ${wOut(goalWeight)} ${wUnit()} around ${niceDate(p.reach_date)}, ${p.reach_date.slice(0, 4)}.` : goalWeight && !p.reach_date ? ' At this intake you would not reach your goal weight.' : '';
+  return `At ${p.calories} kcal a day you are ${pace}.${land}${reach}`;
+}
+
 function bodyScreen() {
-  const d = state.data;
-  const h = state.history;
-  const head = `<h1 class="page-title">Body</h1>${bodyCard()}${photosCard()}`;
-  if (!d.unlocks.trends) return head + locked('trends', 'Trends unlock soon', 'Build a little history first, then your weight trend appears here.');
-  if (!h) return head;
+  const d = state.data, h = state.history, b = state.body;
+  if (!h || !b) return '<h1 class="page-title">Body</h1>';
+  const view = state.bodyView === 'goal' ? 'goal' : 'now';
+  const head = `<h1 class="page-title">Body</h1>${bodyCard(view)}`;
+  const proj = d.projection;
+  const goalW = d.suggested.target_weight_kg || null;
+
+  // Goal: where you are heading, and the one thing you can change here, the goal shape.
+  if (view === 'goal') {
+    if (!b.goal) return `${head}<section class="card locked"><h2>No goal yet</h2><p class="muted">Set a target and a date, and your goal body appears here.</p><button class="primary" data-tab="plan">Set a goal</button></section>`;
+    return `${head}
+      <section class="card">
+        <div class="split">
+          <div class="stat"><b>${goalW ? `${wOut(goalW)} ${wUnit()}` : '–'}</b><span>Goal weight</span></div>
+          <div class="stat"><b>${b.target_body_fat != null ? `${b.target_body_fat}%` : '–'}</b><span>Goal body fat</span></div>
+        </div>
+        <p class="muted small">Target date ${niceDate(b.goal_date)}, ${b.goal_date.slice(0, 4)}.</p>
+        ${proj ? `<p class="small">${projectionLine(proj, goalW)}</p>` : ''}
+      </section>
+      ${goalSliders(b)}`;
+  }
+
+  // Now: today's numbers and everything you log.
   const points = h.weights.map((w) => ({ date: w.date, v: wOut(w.kg) }));
-  const goalW = d.suggested.target_weight_kg ? wOut(d.suggested.target_weight_kg) : null;
   const first = h.weights[0], last = h.weights[h.weights.length - 1];
   const change = first && last && first !== last ? r1(wOut(last.kg) - wOut(first.kg)) : null;
   const bf = d.latest.body_fat;
@@ -362,26 +383,33 @@ function bodyScreen() {
   const needs = d.profile.sex === 'female' ? 'neck, waist and hips' : 'neck and waist';
   const since = first ? niceDate(first.date) : '';
   const trend = change == null ? '' : change < 0 ? `Down ${-change} ${wUnit()} since ${since}.` : change > 0 ? `Up ${change} ${wUnit()} since ${since}.` : `Holding steady since ${since}.`;
+  const sources = !bf ? `Add ${needs} below, or a progress photo, to get a body-fat figure.`
+    : bf.tape != null && bf.photo != null ? `Average of your tape measurements (${bf.tape}%) and ${bf.photos_used} recent photo${bf.photos_used > 1 ? 's' : ''} (${bf.photo}%).`
+      : bf.tape != null ? `From your tape measurements. Add progress photos to refine it.` : `From ${bf.photos_used} recent photo${bf.photos_used > 1 ? 's' : ''}. Add ${needs} to refine it.`;
+  const projPoint = proj && proj.weight_at_goal_date_kg != null ? { date: proj.goal_date, v: wOut(proj.weight_at_goal_date_kg) } : null;
   return `${head}
     <section class="card">
       <div class="split">
         <div class="stat"><b>${last ? `${wOut(last.kg)} ${wUnit()}` : '–'}</b><span>Weight</span></div>
-        <div class="stat"><b>${bf ? `${bf.pct}%` : '–'}</b><span>Body fat${bf ? ` · ${niceDate(bf.date)}` : ''}</span></div>
+        <div class="stat"><b>${bf ? `${bf.pct}%` : '–'}</b><span>Body fat</span></div>
       </div>
-      ${chart(points, goalW)}
+      <p class="muted small">${sources}</p>
+      ${chart(points, goalW ? wOut(goalW) : null, projPoint)}
       ${trend ? `<p class="win">${trend}</p>` : ''}
+      ${proj ? `<p class="small">${projectionLine(proj, goalW)}</p>` : ''}
     </section>
-    ${d.unlocks.body ? `<details class="card" data-keep="measure" ${state.open === 'measure' ? 'open' : ''}>
-      <summary>Tape measurements<span>${bf ? `${bf.pct}% body fat` : 'Add neck and waist'}</span></summary>
+    <details class="card" data-keep="measure" ${state.open === 'measure' ? 'open' : ''}>
+      <summary>Tape measurements<span>${b.measured.length ? `${b.measured.length} of ${SITES.length} measured` : 'Not measured yet'}</span></summary>
       <div class="inside">
-        <p class="muted small">Body fat comes from ${needs} plus your height. Fill in only what you measured today (${lUnit()}).</p>
+        <p class="muted small">These shape the 3D body, and ${needs} feed your body-fat figure. Fill in only what you measured today (${lUnit()}).</p>
         <form id="measure" class="split">
-          ${SITES.map((s) => `<label>${cap(s)}<input name="${s}" inputmode="decimal" placeholder="${lOut(m[s]) || ''}"></label>`).join('')}
+          ${SITES.map((s) => `<label>${cap(s)}<input name="${s}" inputmode="decimal" placeholder="${b.measured.includes(s) ? lOut(m[s]) : ''}"></label>`).join('')}
           <button class="primary" style="grid-column:1/-1">Save measurements</button>
         </form>
-        ${h.body_fat.length > 1 ? `<h2 class="label">Body fat history</h2><div class="list">${h.body_fat.slice().reverse().map((p) => `<div><span>${niceDate(p.date)}</span><b>${p.pct}%</b></div>`).join('')}</div>` : ''}
+        ${h.body_fat.length > 1 ? `<h2 class="label">Tape body fat history</h2><div class="list">${h.body_fat.slice().reverse().map((p) => `<div><span>${niceDate(p.date)}</span><b>${p.pct}%</b></div>`).join('')}</div>` : ''}
       </div>
-    </details>` : locked('body', 'Body measurements come next', 'Tape measurements and your body-fat number open up after a week of check-ins.')}
+    </details>
+    ${photosCard()}
     ${h.weights.length ? `<details class="card"><summary>Weight entries<span>${h.weights.length}</span></summary><div class="inside"><div class="list">${h.weights.slice().reverse().slice(0, 30).map((w) => `<div><span>${niceDate(w.date)}</span><span><b>${wOut(w.kg)} ${wUnit()}</b> <button class="link" data-action="del-weight" data-date="${w.date}" data-kg="${w.kg}" aria-label="Delete weight for ${niceDate(w.date)}">Delete</button></span></div>`).join('')}</div></div></details>` : ''}`;
 }
 
@@ -407,6 +435,7 @@ function planScreen() {
   else {
     const weekly = s.weekly_change_kg ? `${s.weekly_change_kg > 0 ? '+' : ''}${wOut(s.weekly_change_kg)} ${wUnit()} a week` : 'holding steady';
     target = `<div class="split"><div class="stat"><b>${s.calories}</b><span>kcal a day · ${weekly}</span></div><div class="stat"><b>${s.maintenance}</b><span>kcal to maintain</span></div></div>
+      ${d.projection && d.target ? `<p class="small">${projectionLine(d.projection, s.target_weight_kg)}</p>` : ''}
       ${s.target_weight_kg ? `<p class="muted small">Goal weight about ${wOut(s.target_weight_kg)} ${wUnit()}. Protein ${s.protein_g} g a day.</p>` : ''}
       ${s.missing ? `<p class="muted small">Still needed: ${esc(s.missing.join(', '))}.</p>` : ''}
       ${s.warnings.length ? `<div class="notice"><b>This pace is aggressive</b>${s.warnings.map((w) => `<span>${esc(w.message)}</span>`).join('')}${s.safer ? `<span>A safer plan is ${s.safer.calories} kcal a day, reaching the goal around ${niceDate(s.safer.target_date)} ${s.safer.target_date.slice(0, 4)}.</span>` : ''}</div>` : ''}
@@ -470,10 +499,6 @@ function settingsScreen() {
     </section>
     ${extraSettings()}
     <section class="card">
-      <label class="switch">Show everything now<input type="checkbox" data-action="show-all" ${p.show_all ? 'checked' : ''}></label>
-      <p class="muted small">Trends, body measurements and fine-tuning normally open up after 3, 7 and 14 check-in days. Turn this on to skip the wait.</p>
-    </section>
-    <section class="card">
       <h2 class="label">Connect Claude</h2>
       <p class="small">In Claude, add a custom connector with this address, then sign in with your All For One email and password when asked.</p>
       <code>${esc(url)}</code>
@@ -487,22 +512,21 @@ function settingsScreen() {
 const TONES = ['#f6d7c3', '#e9bd9b', '#d19c74', '#b07a52', '#8a5a3b', '#5f3d28', '#3d2618'];
 let viewer = null;
 
-function bodyCard() {
+const goalSliders = (b) => `<section class="card"><div class="row"><h2 class="label">Adjust the goal shape</h2>${Object.keys(b.overrides).length ? '<button class="link fit" data-action="shape-reset">Reset</button>' : ''}</div>
+    <p class="muted small">Projected from your target and the areas you chose. Fine-tune any part (${lUnit()}).</p>
+    ${SITES.map((s) => `<label><span>${cap(s)} · <span data-out="${s}">${lOut(b.goal[s])}</span></span><input type="range" data-action="shape" data-site="${s}" min="${Math.round(b.current[s] * 0.65)}" max="${Math.round(b.current[s] * 1.2)}" step="0.5" value="${b.goal[s]}"></label>`).join('')}</section>`;
+
+// The 3D figure. Now and Goal are separate views: each shows only what belongs to it.
+function bodyCard(view) {
   const b = state.body;
-  if (!b) return '';
-  const view = state.bodyView === 'goal' && b.goal ? 'goal' : 'now';
   const guessed = SITES.filter((s) => !b.measured.includes(s)).length;
-  const sliders = b.goal ? `<details class="card" data-keep="shape" ${state.open === 'shape' ? 'open' : ''}><summary>Adjust the goal shape<span>${Object.keys(b.overrides).length ? `${Object.keys(b.overrides).length} adjusted` : 'Projected'}</span></summary>
-      <div class="inside"><p class="muted small">The goal shape is projected from your target and the areas you chose. Fine-tune any part (${lUnit()}).</p>
-      ${SITES.map((s) => `<label>${cap(s)} · <span data-out="${s}">${lOut(b.goal[s])}</span><input type="range" data-action="shape" data-site="${s}" min="${Math.round(b.current[s] * 0.65)}" max="${Math.round(b.current[s] * 1.2)}" step="0.5" value="${b.goal[s]}"></label>`).join('')}
-      ${Object.keys(b.overrides).length ? '<button class="link" data-action="shape-reset">Back to the projection</button>' : ''}</div></details>` : '';
-  return `<section class="card">
-      <div class="seg" role="group" aria-label="Which body to show"><button data-action="body-view" data-value="now" aria-pressed="${view === 'now'}">Now</button><button data-action="body-view" data-value="goal" aria-pressed="${view === 'goal'}" ${b.goal ? '' : 'disabled'}>Goal</button></div>
-      <div class="stage"><canvas id="body3d" aria-label="3D model of your body. Drag to rotate, pinch to zoom."></canvas><span class="cap">${view === 'goal' ? `Projected for ${niceDate(b.goal_date)}, ${b.goal_date.slice(0, 4)}${b.target_body_fat ? ` · ${b.target_body_fat}% body fat` : ''}` : `Today${b.body_fat ? ` · ${b.body_fat}% body fat` : ''}`}</span></div>
-      <div class="swatches" role="group" aria-label="Skin tone">${TONES.map((t) => `<button data-action="tone" data-value="${t}" aria-pressed="${b.skin_tone === t}" aria-label="Skin tone" style="background:${t}"></button>`).join('')}</div>
-      ${guessed ? `<p class="muted small" style="text-align:center">${guessed === SITES.length ? 'This shape is estimated from your height and weight.' : `${guessed} of ${SITES.length} measurements are still estimates.`} Add tape measurements below to make it yours.</p>` : ''}
-      ${b.goal ? '' : '<p class="muted small" style="text-align:center">Set a goal in Plan to see where you are heading.</p>'}
-    </section>${sliders}`;
+  return `<div class="seg" role="group" aria-label="Which body to show"><button data-action="body-view" data-value="now" aria-pressed="${view === 'now'}">Now</button><button data-action="body-view" data-value="goal" aria-pressed="${view === 'goal'}">Goal</button></div>
+    <section class="card">
+      <div class="stage"><canvas id="body3d" aria-label="3D model of your body. Drag to rotate, pinch to zoom."></canvas></div>
+      <div class="row"><div class="seg" role="group" aria-label="Drawing style"><button data-action="body-style" data-value="shaded" aria-pressed="${state.bodyStyle === 'shaded'}">Shaded</button><button data-action="body-style" data-value="line" aria-pressed="${state.bodyStyle === 'line'}">Line</button></div>
+      <div class="swatches fit" role="group" aria-label="Skin tone">${TONES.map((t) => `<button data-action="tone" data-value="${t}" aria-pressed="${b.skin_tone === t}" aria-label="Skin tone" style="background:${t}"></button>`).join('')}</div></div>
+      ${view === 'now' && guessed ? `<p class="muted small">${guessed === SITES.length ? 'This shape is estimated from your height and weight.' : `${guessed} of ${SITES.length} measurements are still estimates.`} Add tape measurements below to make it yours.</p>` : ''}
+    </section>`;
 }
 
 function mountViewer() {
@@ -511,7 +535,7 @@ function mountViewer() {
   if (!canvas || !state.body) return;
   const which = state.bodyView === 'goal' && state.body.goal ? 'goal' : 'now';
   const first = state.bodyShown || which; // start from what was on screen, then glide to the new shape
-  import('/body3d.js').then(({ mountBody }) => mountBody(canvas, state.body, first)).then((v) => {
+  import('/body3d.js').then(({ mountBody }) => mountBody(canvas, state.body, first, state.bodyStyle)).then((v) => {
     if (!canvas.isConnected) return v.destroy();
     viewer = v;
     if (first !== which) v.show(state.body, which);
@@ -795,7 +819,8 @@ async function act(el) {
   if (a === 'cancel-workout') { if (!armed(el, 'Tap again to discard. Progress is lost.')) return; await api('POST', `/api/workout/${state.session.id}/cancel`, {}); state.session = null; state.view = 'tabs'; return load(); }
 
   // Body, photos, food, reminders
-  if (a === 'body-view') { state.bodyView = el.dataset.value; return render(); }
+  if (a === 'body-view') { state.bodyView = el.dataset.value; state.open = null; return render(); }
+  if (a === 'body-style') { state.bodyStyle = el.dataset.value; if (viewer) viewer.style(state.bodyStyle); el.parentElement.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === el)); return; }
   if (a === 'tone') { state.body.skin_tone = el.dataset.value; if (viewer) viewer.tone(el.dataset.value); el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); return api('PUT', '/api/profile', { skin_tone: el.dataset.value }); }
   if (a === 'shape-reset') { state.body = await api('PUT', '/api/body', { overrides: {} }); return render(); }
   if (a === 'del-photo') return armed(el, 'Tap again to delete') && save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Photo deleted.');
@@ -828,7 +853,6 @@ async function act(el) {
     await save(() => api('DELETE', `/api/weight/${date}`));
     return toast('Entry deleted.', () => api('POST', '/api/weight', { kg: Number(kg), date }));
   }
-  if (a === 'show-all') return save(() => api('PUT', '/api/profile', { show_all: el.checked }), el.checked ? 'Everything is open.' : 'Back to unlocking as you go.');
   if (a === 'copy') return navigator.clipboard.writeText(el.dataset.text).then(() => toast('Copied.'), () => toast('Copy failed. Select the address and copy it by hand.'));
   if (a === 'logout') { await api('POST', '/api/logout', {}); state.view = 'tabs'; return load(); }
 }

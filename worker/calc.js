@@ -61,6 +61,31 @@ export function weightForBodyFat(weight_kg, body_fat, target_body_fat) {
   return round1(lean / (1 - target_body_fat / 100));
 }
 
+// Where weight is heading on the calorie target actually in force, as opposed to what the goal asks for.
+export function project({ weight_kg, maintenance, calories, goal, target_weight_kg, today }) {
+  if (!weight_kg || !maintenance || !calories) return null;
+  const perDay = (calories - maintenance) / KCAL_PER_KG;
+  const out = { calories, weekly_change_kg: Math.round(perDay * 7 * 100) / 100 };
+  if (goal && daysBetween(today, goal.target_date) > 0) {
+    out.goal_date = goal.target_date;
+    out.weight_at_goal_date_kg = round1(weight_kg + perDay * daysBetween(today, goal.target_date));
+  }
+  if (target_weight_kg && perDay !== 0 && (target_weight_kg - weight_kg) / perDay > 0) {
+    out.reach_date = addDays(today, Math.ceil((target_weight_kg - weight_kg) / perDay));
+  }
+  return out;
+}
+
+// One body-fat figure from the sources available. The tape formula and photo estimates each miss by a few
+// points in different ways, so when both exist they are averaged; with one, that one is used.
+export function blendBodyFat(tape, photos) {
+  const mids = photos.map((p) => (p.low + p.high) / 2);
+  const photo = mids.length ? round1(mids.reduce((a, b) => a + b, 0) / mids.length) : null;
+  if (tape == null && photo == null) return null;
+  const pct = tape != null && photo != null ? round1((tape + photo) / 2) : tape ?? photo;
+  return { pct, tape, photo, photos_used: mids.length };
+}
+
 // What the goal and timeline ask for. Unsafe plans are not blocked: they come back with
 // warnings and a safer alternative, and the caller decides.
 export function plan({ profile, weight_kg, body_fat, goal, today }) {

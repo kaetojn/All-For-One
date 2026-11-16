@@ -11,9 +11,9 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 - **Workouts:** a plan of ordered days built from your equipment and target areas. One tap completes an exercise; sets, reps and weights come pre-filled from last time. Each exercise has start and end photos that loop, plus written steps.
 - **After a workout:** rate the effort from 1 to 10 and how you feel; the app says what that effort level means.
 - **Tracking:** weight, tape measurements, and a daily food check (on target or not, calories, protein).
-- **Body fat:** calculated from neck and waist (plus hips for women) and height, using the US Navy method.
+- **Body fat:** the US Navy tape formula (neck and waist, plus hips for women) averaged with estimates from progress photos taken in the last 30 days.
 - **Goal and calorie target:** an aggressive pace gets a warning and a safer alternative, and you choose.
-- **Gradual unlocks:** trends, body measurements and fine-tuning open after 3, 7 and 14 check-in days. A switch in More opens everything at once.
+- **Projection:** where your weight is heading on the calorie target in force, shown on the weight chart.
 - **Claude connector:** at `/mcp`. Claude can read everything above, log entries, search the exercise library, replace the workout plan and change the calorie target, each with a note you can read in the app.
 
 ## Also built

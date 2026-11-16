@@ -2,7 +2,7 @@
 // so a rule enforced in this file holds for both.
 
 import { HttpError, newId } from './auth.js';
-import { SITES, ACTIVITY, navyBodyFat, plan, addDays } from './calc.js';
+import { SITES, ACTIVITY, navyBodyFat, plan, project, blendBodyFat, addDays } from './calc.js';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -250,23 +250,30 @@ export async function history(db, uid, days = 90) {
 export async function overview(db, uid) {
   const profile = await getProfile(db, uid);
   const today = todayIn(profile.timezone);
-  const [goal, target, weight, measurements, todayLog, week] = await Promise.all([
+  const [goal, target, weight, measurements, todayLog, week, photoRows] = await Promise.all([
     getGoal(db, uid),
     currentTarget(db, uid),
     db.prepare(`SELECT date, kg FROM weights WHERE user_id = ? ORDER BY date DESC LIMIT 1`).bind(uid).first(),
     db.prepare(`SELECT date, site, cm FROM measurements WHERE user_id = ? ORDER BY date`).bind(uid).all(),
     db.prepare(`SELECT calories, protein_g, target_met, note FROM daily_logs WHERE user_id = ? AND date = ?`).bind(uid, today).first(),
     db.prepare(`SELECT date, target_met FROM daily_logs WHERE user_id = ? AND date > ? ORDER BY date`).bind(uid, addDays(today, -7)).all(),
+    // Photo estimates from the last 30 days count toward body fat.
+    db.prepare(`SELECT estimate, date FROM photos WHERE user_id = ? AND kind = 'body' AND estimate IS NOT NULL AND date >= ?`).bind(uid, addDays(today, -30)).all(),
   ]);
   const { series, latest } = bodyFatSeries(profile, measurements.results);
-  const body_fat = series.length ? series[series.length - 1] : null;
+  const tape = series.length ? series[series.length - 1] : null;
+  const photos = photoRows.results.map((r) => JSON.parse(r.estimate)).filter((e) => Number.isFinite(e.body_fat_low) && Number.isFinite(e.body_fat_high)).map((e) => ({ low: e.body_fat_low, high: e.body_fat_high }));
+  const blend = blendBodyFat(tape ? tape.pct : null, photos);
+  const body_fat = blend ? { ...blend, date: tape ? tape.date : today } : null;
   const suggested = plan({ profile, weight_kg: weight ? weight.kg : null, body_fat: body_fat ? body_fat.pct : null, goal, today });
+  const projection = suggested.ready ? project({ weight_kg: weight.kg, maintenance: suggested.maintenance, calories: target ? target.calories : suggested.calories, goal, target_weight_kg: suggested.target_weight_kg, today }) : null;
   return {
     today,
     profile,
     goal,
     target,
     suggested,
+    projection,
     latest: { weight: weight || null, body_fat, measurements: latest },
     today_log: todayLog ? dayRow(todayLog) : null,
     last_7_days: { logged: week.results.length, target_met: week.results.filter((r) => r.target_met).length },

@@ -164,11 +164,35 @@ export class Figure {
         .replace('#include <color_fragment>', '#include <color_fragment>\nfloat garment = smoothstep(-0.012, 0.012, vCloth);\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.022, 0.021, 0.018), garment);')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.85, garment);');
     };
+    // The line-drawing style: flat fill, with ink wherever the surface turns away from the viewer. That draws
+    // the outline and also the folds and curves inside it, so it reads like an anatomical illustration.
+    this.lineColors = { fill: { value: new THREE.Color() }, ink: { value: new THREE.Color('#1b1a17') }, garment: { value: new THREE.Color('#55514b') } };
+    this.lineMaterial = new THREE.MeshLambertMaterial({ color: '#ffffff' });
+    this.lineMaterial.toneMapped = false;
+    this.lineMaterial.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, { uFill: this.lineColors.fill, uInk: this.lineColors.ink, uGarment: this.lineColors.garment });
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float cloth;\nvarying float vCloth;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCloth = cloth;');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCloth;\nuniform vec3 uFill;\nuniform vec3 uInk;\nuniform vec3 uGarment;')
+        .replace('#include <opaque_fragment>', `float facing = abs(dot(normal, normalize(vViewPosition)));
+          float inked = 1.0 - smoothstep(0.2, 0.3, facing);
+          float hem = 1.0 - smoothstep(0.0, 0.02, abs(vCloth));
+          vec3 flatFill = mix(uFill, uGarment, smoothstep(-0.01, 0.01, vCloth));
+          flatFill *= 0.9 + 0.1 * smoothstep(0.3, 0.75, facing);
+          outgoingLight = mix(flatFill, uInk, max(inked, hem * 0.85));
+          #include <opaque_fragment>`);
+    };
+    this.setTone(tone);
     this.mesh = new THREE.SkinnedMesh(g, this.material);
     this.mesh.frustumCulled = false;
     this.bones = data.meta.bones.map((b) => Object.assign(new THREE.Bone(), { name: b.name }));
     data.meta.bones.forEach((b, i) => (b.parent < 0 ? this.mesh : this.bones[b.parent]).add(this.bones[i]));
     this.skeleton = new THREE.Skeleton(this.bones);
+    // A steady outer line for the drawing style: the same skin drawn slightly larger, back faces only.
+    const hull = new THREE.MeshBasicMaterial({ color: '#1b1a17', side: THREE.BackSide });
+    hull.onBeforeCompile = (shader) => { shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normalize(objectNormal) * 0.035;'); };
+    this.outline = new THREE.SkinnedMesh(g, hull);
+    this.outline.frustumCulled = false; this.outline.visible = false;
+    this.mesh.add(this.outline);
     this.group = new THREE.Group();
     this.group.add(this.mesh);
     this.rot = {}; this.pose = 'idle'; this.until = 0; this.morph = null; this.bound = false;
@@ -182,8 +206,12 @@ export class Figure {
     this.group.updateMatrixWorld(true);
     // The skin is bound in world space, so the bind matrix and the bones' inverses must be taken at the same moment.
     if (this.bound) { this.mesh.bindMatrix.copy(this.mesh.matrixWorld); this.mesh.bindMatrixInverse.copy(this.mesh.matrixWorld).invert(); this.skeleton.calculateInverses(); }
-    else { this.mesh.bind(this.skeleton); this.bound = true; }
+    else { this.mesh.bind(this.skeleton); this.outline.bind(this.skeleton, this.mesh.bindMatrix); this.bound = true; return; }
+    this.outline.bindMatrix.copy(this.mesh.bindMatrix); this.outline.bindMatrixInverse.copy(this.mesh.bindMatrixInverse);
   }
+
+  // 'shaded' is the lit, solid figure; 'line' is the ink drawing.
+  setStyle(style) { const line = style === 'line'; this.mesh.material = line ? this.lineMaterial : this.material; this.outline.visible = line; }
 
   // Work out, for every vertex, how far inside the shorts (and, for women, the top) it sits. Positive is inside.
   dress(pos) {
@@ -201,7 +229,7 @@ export class Figure {
     this.geometry.attributes.cloth.needsUpdate = true;
   }
 
-  setTone(hex) { this.material.color.set(hex); }
+  setTone(hex) { this.material.color.set(hex); this.lineColors.fill.value.set(hex).lerp(new THREE.Color('#ffffff'), 0.5); }
 
   setShape(shape, animate = false) {
     const from = this.shape;

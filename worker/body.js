@@ -45,7 +45,10 @@ export async function bodyModel(db, uid) {
     measured: Object.keys(o.latest.measurements), current, weight_kg: weight, target_weight_kg: o.suggested.target_weight_kg || null, areas: o.goal ? o.goal.target_areas : [],
     goal: o.goal ? projectGoal(current, { weight_kg: weight, target_weight_kg: o.suggested.target_weight_kg, areas: o.goal.target_areas, overrides }) : null,
     goal_date: o.goal ? o.goal.target_date : null, overrides,
-    body_fat: o.latest.body_fat ? o.latest.body_fat.pct : null, target_body_fat: o.goal ? o.goal.target_body_fat : null,
+    body_fat: o.latest.body_fat ? o.latest.body_fat.pct : null,
+    // The goal's body fat: as set, or what the goal weight implies if muscle is kept.
+    target_body_fat: !o.goal ? null : o.goal.target_body_fat ?? (o.latest.body_fat && weight && o.suggested.target_weight_kg ? r1((1 - (weight * (1 - o.latest.body_fat.pct / 100)) / o.suggested.target_weight_kg) * 100) : null),
+    projection: o.projection,
   };
 }
 

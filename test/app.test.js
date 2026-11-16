@@ -228,7 +228,7 @@ test('onboarding builds a plan and the workout loop prefills from last time', as
   assert.equal(home.workout.next.day_index, 0);
   assert.ok(home.workout.next.exercises.length >= 3);
   assert.ok(home.workout.next.exercises.every((x) => x.name && ['body only', 'dumbbell'].includes(x.equipment)));
-  assert.equal(home.unlocks.trends, false);
+  assert.equal(home.unlocks.trends, true, 'everything is open from day one');
 
   const s = (await a.call('POST', '/api/workout/start', {})).data;
   assert.equal(s.status, 'active');
@@ -255,7 +255,6 @@ test('onboarding builds a plan and the workout loop prefills from last time', as
   assert.equal((await a.call('GET', '/api/workouts')).data.length, 1);
   assert.equal((await a.call('POST', '/api/workout/00000000-0000-0000-0000-000000000000/finish', {})).status, 404);
 
-  await a.call('PUT', '/api/profile', { show_all: true });
   assert.equal((await a.call('GET', '/api/state')).data.unlocks.fine_tuning, true);
 });
 
@@ -455,4 +454,34 @@ test('3D body numbers: defaults, projection toward the goal, overrides', async (
   const withGoal = (await a.call('PUT', '/api/body', { overrides: { waist: 84, nonsense: 5 } })).data;
   assert.equal(withGoal.goal.waist, 84);
   assert.deepEqual(withGoal.overrides, { waist: 84 });
+});
+
+test('projected weight follows the target in force; body fat blends tape and photos', async () => {
+  const { project, blendBodyFat } = await import('../worker/calc.js');
+  const p = project({ weight_kg: 90, maintenance: 2600, calories: 2050, goal: { target_date: '2027-01-24' }, target_weight_kg: 85, today: '2026-11-15' });
+  assert.equal(p.weekly_change_kg, -0.5);
+  assert.equal(p.weight_at_goal_date_kg, 85);
+  assert.equal(p.reach_date, '2027-01-24');
+  assert.equal(project({ weight_kg: 90, maintenance: 2600, calories: 2700, target_weight_kg: 85, today: '2026-11-15' }).reach_date, undefined, 'eating above maintenance never reaches a lower weight');
+  assert.deepEqual(blendBodyFat(28, [{ low: 20, high: 24 }, { low: 22, high: 26 }]), { pct: 25.5, tape: 28, photo: 23, photos_used: 2 });
+  assert.equal(blendBodyFat(28, []).pct, 28);
+  assert.equal(blendBodyFat(null, [{ low: 20, high: 24 }]).pct, 22);
+  assert.equal(blendBodyFat(null, []), null);
+
+  const a = await ready();
+  const db = a.env.DB, uid = (await db.prepare('SELECT id FROM users').first()).id;
+  await a.call('POST', '/api/measurements', { values: { neck: 39, waist: 98 } });
+  const tapeOnly = (await a.call('GET', '/api/state')).data.latest.body_fat;
+  assert.equal(tapeOnly.photo, null);
+  await db.prepare(`INSERT INTO photos (id, user_id, kind, pose, date, object_key, estimate, estimated_by, created_at) VALUES ('p1', ?, 'body', 'front', ?, 'k', ?, 'app', 'now')`).bind(uid, new Date().toISOString().slice(0, 10), JSON.stringify({ body_fat_low: 16, body_fat_high: 20 })).run();
+  const state = (await a.call('GET', '/api/state')).data;
+  assert.equal(state.latest.body_fat.photo, 18);
+  assert.equal(state.latest.body_fat.pct, Math.round(((tapeOnly.tape + 18) / 2) * 10) / 10);
+  const future = new Date(Date.now() + 100 * 86400000).toISOString().slice(0, 10);
+  await a.call('PUT', '/api/goal', { target_weight_kg: 84, target_date: future });
+  await a.call('POST', '/api/target', { calories: 2000, reason: 'x' });
+  const proj = (await a.call('GET', '/api/state')).data.projection;
+  assert.equal(proj.calories, 2000);
+  assert.ok(proj.weight_at_goal_date_kg < 90);
+  assert.ok((await a.call('GET', '/api/body')).data.target_body_fat > 0);
 });

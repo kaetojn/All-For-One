@@ -81,11 +81,9 @@ async function activityOf(db, uid) {
   return { today, streak, active_days: rows.length, checked_in_today: set.has(today) };
 }
 
-// Extra screens open up as the habit forms, so the first week stays simple. "Show everything" in settings skips the wait.
-export function unlocksFor(profile, activity) {
-  const all = !!profile.show_all;
-  const at = (n) => all || activity.active_days >= n;
-  return { trends: at(3), body: at(7), fine_tuning: at(14), next: all ? null : [3, 7, 14].find((n) => activity.active_days < n) || null };
+// Every screen is available from day one. (An earlier version unlocked them gradually; this keeps the shape other code expects.)
+export function unlocksFor() {
+  return { trends: true, body: true, fine_tuning: true, next: null };
 }
 
 const STAGES = [[30, 'beacon'], [14, 'bonfire'], [7, 'blaze'], [3, 'flame'], [1, 'ember'], [0, 'spark']];
