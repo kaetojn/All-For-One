@@ -201,7 +201,16 @@ button.primary.armed { background: var(--stop); border-color: var(--stop); color
   .demo img + img { display: none; }
 }
 
-/* The body sketch */
+/* The body figure: pre-drawn pencil views in a swipeable strip. The paper is lifted to near white
+   and multiplied onto a warm panel so the drawing sits on the card rather than in a grey box. */
+.figure { display: grid; gap: 14px; }
+.figure-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; border-radius: calc(var(--radius) - 6px); background: #f3f0ea; overscroll-behavior-x: contain; }
+.figure-track::-webkit-scrollbar { display: none; }
+.figure-slide { flex: 0 0 100%; scroll-snap-align: center; display: flex; justify-content: center; padding: 14px 0 6px; }
+.figure-slide img { height: min(58vh, 420px); max-width: 100%; object-fit: contain; -webkit-mask-image: radial-gradient(ellipse 72% 80% at 50% 50%, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 72% 80% at 50% 50%, #000 62%, transparent 100%); filter: brightness(1.3) contrast(1.1); mix-blend-mode: multiply; user-select: none; -webkit-user-drag: none; }
+.figure-views { justify-self: center; }
+
+/* The older generated sketch (?sketch) */
 .sketch { aspect-ratio: 1 / 2; max-height: 520px; margin: 0 auto; width: 100%; }
 .sketch svg { width: 100%; height: 100%; display: block; }
 .sketch .sway { animation: sway 5s ease-in-out infinite; }

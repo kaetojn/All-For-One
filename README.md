@@ -18,7 +18,7 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 
 ## Also built
 
-- **Body sketch:** a faceless figure drawn like an anatomy sketch, shaped by your measurements. Its pose follows body fat (passed out, slouching, standing, hands on hips, flexing) and so do the muscle lines. Build (lean, muscular, bodybuilder) and colour are set in More. The earlier 3D figure is still in the code; add `?3d` to the address to see it.
+- **Body figure:** pre-drawn, faceless pencil figures (male and female, 9 each) seen from the front, side and back; swipe to turn. The drawing nearest your body fat is shown, from seated and worn out to flexing, and Build in More (lean, muscular, bodybuilder) picks between the lean ones. The images are cut from sheets with `python3 scripts/slice-figures.py <sheet dir>`. The older generated sketch is at `?sketch` and the 3D figure at `?3d`.
 - **Companion:** a bear cub, built from simple shapes in `public/mascot.js`. It turns up only for moments worth marking: the finish screen, a workout done today, and streak milestones. It settles and stops drawing after a few seconds, and holds still when the phone asks for reduced motion.
 - **Photos:** only the analysis is kept. With `ANTHROPIC_API_KEY` set on the Worker a photo is read as it arrives and never stored; otherwise it is held privately until Claude reads it at a review, then deleted.
 - **Food:** store, budget, household and dietary needs; a weekly meal plan and shopping list that Claude writes; a price list Claude fills in.

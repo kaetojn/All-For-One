@@ -491,3 +491,20 @@ test('projected weight follows the target in force; body fat blends tape and pho
   assert.ok(proj.weight_at_goal_date_kg < 90);
   assert.ok((await a.call('GET', '/api/body')).data.target_body_fat > 0);
 });
+
+test('the body figure is the drawing nearest the body fat, with build only once lean', async () => {
+  const { pickFigure, VIEWS } = await import('../public/figures.js');
+  const { existsSync } = await import('node:fs');
+  assert.equal(pickFigure('male', 36, 'lean'), 'A');
+  assert.equal(pickFigure('male', 28), 'B');
+  assert.equal(pickFigure('male', 22, 'bodybuilder'), 'C');
+  assert.equal(pickFigure('male', 16, 'lean'), 'D1');
+  assert.equal(pickFigure('male', 10, 'bodybuilder'), 'E3');
+  assert.equal(pickFigure('female', 36), 'B');
+  assert.equal(pickFigure('female', 24, 'bodybuilder'), 'D3');
+  assert.equal(pickFigure('female', 18, 'muscular'), 'E2');
+  assert.equal(pickFigure('female', null), 'C');
+  for (const sex of ['male', 'female']) for (const key of ['A', 'B', 'C', 'D1', 'D2', 'D3', 'E1', 'E2', 'E3']) for (const v of VIEWS) {
+    assert.ok(existsSync(new URL(`../public/figures/${sex}/${key}-${v}.webp`, import.meta.url)), `${sex} ${key} ${v}`);
+  }
+});

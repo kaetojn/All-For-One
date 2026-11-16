@@ -1,4 +1,5 @@
 import { drawSketch } from '/sketch.js';
+import { pickFigure, figureLabel, figureStrip, mountFigure } from '/figures.js';
 // All For One web app. No build step and no dependencies: this file is served as written.
 // The server stores metric values; this file converts for display when the profile says imperial.
 //
@@ -12,7 +13,7 @@ const $toast = document.getElementById('toast');
 const state = {
   data: null, tab: 'today', view: 'tabs', history: null, targets: null, plan: null, authError: '',
   session: null, open: null, result: null, finish: { effort: null, feeling: null, symptoms: [] },
-  body: null, bodyView: 'now', bodyShown: null, bodyStyle: 'shaded', photos: null, food: null, mealResult: null, confirmRefresh: false, syncKey: null,
+  body: null, bodyView: 'now', bodyShown: null, bodyStyle: 'shaded', figView: 'front', photos: null, food: null, mealResult: null, confirmRefresh: false, syncKey: null,
   intro: { step: 0, units: 'metric', equipment: [] },
 };
 
@@ -494,9 +495,8 @@ function settingsScreen() {
     ${extraSettings()}
     <section class="card">
       <h2 class="label">Figure</h2>
-      <p class="small">How your body sketch is drawn. Its pose and muscle lines follow your body fat; build sets how much muscle it carries.</p>
+      <p class="small">Your figure's pose follows your body fat. Build sets how much muscle it carries once you're lean.</p>
       <fieldset class="chips" aria-label="Build">${Object.entries(BUILDS).map(([k, v]) => `<button type="button" data-action="build" data-value="${k}" aria-pressed="${(p.build || 'muscular') === k}">${v}</button>`).join('')}</fieldset>
-      <fieldset class="swatches" aria-label="Colour" style="justify-content:flex-start"><button data-action="tone" data-value="neutral" aria-pressed="${!p.skin_tone}" aria-label="Neutral" style="background:#f3efe8"></button>${TONES.map((t) => `<button data-action="tone" data-value="${t}" aria-pressed="${p.skin_tone === t}" aria-label="Skin tone" style="background:${t}"></button>`).join('')}</fieldset>
     </section>
     <section class="card">
       <h2 class="label">Connect Claude</h2>
@@ -514,23 +514,30 @@ function settingsScreen() {
 const SHOW_3D = new URLSearchParams(location.search).has('3d');
 const BUILDS = { lean: 'Lean', muscular: 'Muscular', bodybuilder: 'Bodybuilder' };
 
-const TONES = ['#f6d7c3', '#e9bd9b', '#d19c74', '#b07a52', '#8a5a3b', '#5f3d28', '#3d2618'];
 let viewer = null;
 
 const goalSliders = (b) => `<section class="card"><div class="row"><h2 class="label">Adjust the goal shape</h2>${Object.keys(b.overrides).length ? '<button class="link fit" data-action="shape-reset">Reset</button>' : ''}</div>
     <p class="muted small">Projected from your target and the areas you chose. Fine-tune any part (${lUnit()}).</p>
     ${SITES.map((s) => `<label><span>${cap(s)} · <span data-out="${s}">${lOut(b.goal[s])}</span></span><input type="range" data-action="shape" data-site="${s}" min="${Math.round(b.current[s] * 0.65)}" max="${Math.round(b.current[s] * 1.2)}" step="0.5" value="${b.goal[s]}"></label>`).join('')}</section>`;
 
+// The drawn figure: the nearest pre-drawn sketch for the body fat and build (figures.js).
+// ?sketch shows the older generated drawing (sketch.js) instead.
+const SHOW_SKETCH = new URLSearchParams(location.search).has('sketch');
+
 function sketchCard(view) {
   const b = state.body;
   const goal = view === 'goal';
   const bf = goal ? b.target_body_fat : b.body_fat;
-  const svg = drawSketch({ sex: b.sex, height_cm: b.height_cm, body_fat: bf, build: b.build, measurements: goal ? b.goal : b.current, tone: b.skin_tone, id: view });
+  const key = pickFigure(b.sex, bf, b.build);
+  const art = SHOW_SKETCH
+    ? `<div class="sketch fade">${drawSketch({ sex: b.sex, height_cm: b.height_cm, body_fat: bf, build: b.build, measurements: goal ? b.goal : b.current, tone: b.skin_tone, id: view })}</div>`
+    : figureStrip({ sex: b.sex, key, view: state.figView, alt: `${goal ? 'Your goal' : 'You now'}: ${figureLabel(key).toLowerCase()}` });
   const guessed = SITES.filter((s) => !b.measured.includes(s)).length;
+  const build = key.startsWith('D') || key.startsWith('E') ? `, ${BUILDS[b.build].toLowerCase()} build` : '';
   return `<div class="seg" role="group" aria-label="Which body to show"><button data-action="body-view" data-value="now" aria-pressed="${view === 'now'}">Now</button><button data-action="body-view" data-value="goal" aria-pressed="${goal}">Goal</button></div>
     <section class="card">
-      <div class="sketch fade" key="${view}">${svg}</div>
-      <p class="muted small">${goal ? `Drawn at ${bf != null ? `${bf}%` : 'your goal'} body fat, ${BUILDS[b.build].toLowerCase()} build.` : `Drawn at ${bf != null ? `${bf}%` : 'an estimated'} body fat from your measurements.`}${!goal && guessed ? ` ${guessed} of ${SITES.length} measurements are still estimates.` : ''} Build and colour are in More.</p>
+      ${art}
+      <p class="muted small">${goal ? `Your goal at ${bf != null ? `${bf}%` : 'your target'} body fat${build}.` : `You now, at ${bf != null ? `${bf}%` : 'an estimated'} body fat${build}.`}${!goal && guessed ? ` ${guessed} of ${SITES.length} measurements are still estimates.` : ''} Swipe to turn. Build is in More.</p>
     </section>`;
 }
 
@@ -716,6 +723,7 @@ function draw() {
   $app.innerHTML = `<div class="shell">${TABS[state.tab][1]()}</div>
     <nav class="tabs" aria-label="Sections">${Object.entries(TABS).map(([k, [label]]) => `<button data-tab="${k}" ${state.tab === k ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</nav>`;
   mountViewer();
+  mountFigure($app, (v) => { state.figView = v; });
 }
 
 /* ---------- events ---------- */
@@ -842,7 +850,6 @@ async function act(el) {
   if (a === 'body-view') { state.bodyView = el.dataset.value; state.open = null; return render(); }
   if (a === 'body-style') { state.bodyStyle = el.dataset.value; if (viewer) viewer.style(state.bodyStyle); el.parentElement.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === el)); return; }
   if (a === 'build') return save(() => api('PUT', '/api/profile', { build: el.dataset.value }), 'Build updated.');
-  if (a === 'tone') return save(() => api('PUT', '/api/profile', { skin_tone: el.dataset.value }), 'Colour updated.');
   if (a === 'shape-reset') { state.body = await api('PUT', '/api/body', { overrides: {} }); return render(); }
   if (a === 'del-photo') return armed(el, 'Tap again to remove') && save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Result removed.');
   if (a === 'bought') { state.food.plan = await api('POST', '/api/food/bought', { index: Number(el.dataset.index) }); return render(); }
