@@ -1,0 +1,755 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-16T15:53:35.009Z",
+  "title": "Design System: All For One",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Ivory Paper",
+        "canonical": "oklch(96.7% 0.007 88.7)",
+        "tonalRamp": [
+          "oklch(15% 0.002 88.7)",
+          "oklch(26% 0.003 88.7)",
+          "oklch(37% 0.005 88.7)",
+          "oklch(48% 0.007 88.7)",
+          "oklch(59% 0.007 88.7)",
+          "oklch(70% 0.005 88.7)",
+          "oklch(82% 0.003 88.7)",
+          "oklch(95% 0.002 88.7)"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Cream Leaf",
+        "canonical": "oklch(99.7% 0.004 91.4)",
+        "tonalRamp": [
+          "oklch(15% 0.001 91.4)",
+          "oklch(26% 0.002 91.4)",
+          "oklch(37% 0.003 91.4)",
+          "oklch(48% 0.004 91.4)",
+          "oklch(59% 0.004 91.4)",
+          "oklch(70% 0.003 91.4)",
+          "oklch(82% 0.002 91.4)",
+          "oklch(95% 0.001 91.4)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(21.8% 0.006 91.6)",
+        "tonalRamp": [
+          "oklch(15% 0.001 91.6)",
+          "oklch(26% 0.002 91.6)",
+          "oklch(37% 0.004 91.6)",
+          "oklch(48% 0.006 91.6)",
+          "oklch(59% 0.006 91.6)",
+          "oklch(70% 0.004 91.6)",
+          "oklch(82% 0.003 91.6)",
+          "oklch(95% 0.001 91.6)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Pencil",
+        "canonical": "oklch(52.6% 0.015 82.4)",
+        "tonalRamp": [
+          "oklch(15% 0.004 82.4)",
+          "oklch(26% 0.006 82.4)",
+          "oklch(37% 0.01 82.4)",
+          "oklch(48% 0.014 82.4)",
+          "oklch(59% 0.015 82.4)",
+          "oklch(70% 0.011 82.4)",
+          "oklch(82% 0.007 82.4)",
+          "oklch(95% 0.004 82.4)"
+        ]
+      },
+      "faint": {
+        "role": "neutral",
+        "displayName": "Vellum",
+        "canonical": "oklch(94.1% 0.01 81.9)",
+        "tonalRamp": [
+          "oklch(15% 0.003 81.9)",
+          "oklch(26% 0.004 81.9)",
+          "oklch(37% 0.007 81.9)",
+          "oklch(48% 0.01 81.9)",
+          "oklch(59% 0.01 81.9)",
+          "oklch(70% 0.008 81.9)",
+          "oklch(82% 0.005 81.9)",
+          "oklch(95% 0.003 81.9)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "rgba(27, 26, 23, .1)",
+        "tonalRamp": [
+          "oklch(15% 0.001 91.6)",
+          "oklch(26% 0.002 91.6)",
+          "oklch(37% 0.004 91.6)",
+          "oklch(48% 0.006 91.6)",
+          "oklch(59% 0.006 91.6)",
+          "oklch(70% 0.004 91.6)",
+          "oklch(82% 0.003 91.6)",
+          "oklch(95% 0.001 91.6)"
+        ]
+      },
+      "leather": {
+        "role": "primary",
+        "displayName": "Tanned Leather",
+        "canonical": "oklch(53.6% 0.099 53.1)",
+        "tonalRamp": [
+          "oklch(15% 0.025 53.1)",
+          "oklch(26% 0.04 53.1)",
+          "oklch(37% 0.067 53.1)",
+          "oklch(48% 0.094 53.1)",
+          "oklch(59% 0.099 53.1)",
+          "oklch(70% 0.074 53.1)",
+          "oklch(82% 0.045 53.1)",
+          "oklch(95% 0.025 53.1)"
+        ]
+      },
+      "leather-soft": {
+        "role": "primary",
+        "displayName": "Leather Soft",
+        "canonical": "oklch(94.8% 0.016 67.7)",
+        "tonalRamp": [
+          "oklch(15% 0.004 67.7)",
+          "oklch(26% 0.006 67.7)",
+          "oklch(37% 0.011 67.7)",
+          "oklch(48% 0.015 67.7)",
+          "oklch(59% 0.016 67.7)",
+          "oklch(70% 0.012 67.7)",
+          "oklch(82% 0.007 67.7)",
+          "oklch(95% 0.004 67.7)"
+        ]
+      },
+      "amber": {
+        "role": "secondary",
+        "displayName": "Worn Brass",
+        "canonical": "oklch(71.7% 0.098 73.3)",
+        "tonalRamp": [
+          "oklch(15% 0.025 73.3)",
+          "oklch(26% 0.039 73.3)",
+          "oklch(37% 0.066 73.3)",
+          "oklch(48% 0.093 73.3)",
+          "oklch(59% 0.098 73.3)",
+          "oklch(70% 0.074 73.3)",
+          "oklch(82% 0.044 73.3)",
+          "oklch(95% 0.025 73.3)"
+        ]
+      },
+      "good": {
+        "role": "semantic",
+        "displayName": "Sage",
+        "canonical": "oklch(55.4% 0.065 164.5)",
+        "tonalRamp": [
+          "oklch(15% 0.016 164.5)",
+          "oklch(26% 0.026 164.5)",
+          "oklch(37% 0.044 164.5)",
+          "oklch(48% 0.061 164.5)",
+          "oklch(59% 0.065 164.5)",
+          "oklch(70% 0.048 164.5)",
+          "oklch(82% 0.029 164.5)",
+          "oklch(95% 0.016 164.5)"
+        ]
+      },
+      "good-soft": {
+        "role": "semantic",
+        "displayName": "Sage Tint",
+        "canonical": "oklch(95.2% 0.009 150.3)",
+        "tonalRamp": [
+          "oklch(15% 0.002 150.3)",
+          "oklch(26% 0.004 150.3)",
+          "oklch(37% 0.006 150.3)",
+          "oklch(48% 0.009 150.3)",
+          "oklch(59% 0.009 150.3)",
+          "oklch(70% 0.007 150.3)",
+          "oklch(82% 0.004 150.3)",
+          "oklch(95% 0.002 150.3)"
+        ]
+      },
+      "warn": {
+        "role": "semantic",
+        "displayName": "Tobacco",
+        "canonical": "oklch(48% 0.091 71.9)",
+        "tonalRamp": [
+          "oklch(15% 0.023 71.9)",
+          "oklch(26% 0.036 71.9)",
+          "oklch(37% 0.062 71.9)",
+          "oklch(48% 0.087 71.9)",
+          "oklch(59% 0.091 71.9)",
+          "oklch(70% 0.068 71.9)",
+          "oklch(82% 0.041 71.9)",
+          "oklch(95% 0.023 71.9)"
+        ]
+      },
+      "warn-bg": {
+        "role": "semantic",
+        "displayName": "Tobacco Tint",
+        "canonical": "oklch(95.4% 0.023 84.6)",
+        "tonalRamp": [
+          "oklch(15% 0.006 84.6)",
+          "oklch(26% 0.009 84.6)",
+          "oklch(37% 0.015 84.6)",
+          "oklch(48% 0.022 84.6)",
+          "oklch(59% 0.023 84.6)",
+          "oklch(70% 0.017 84.6)",
+          "oklch(82% 0.01 84.6)",
+          "oklch(95% 0.006 84.6)"
+        ]
+      },
+      "stop": {
+        "role": "semantic",
+        "displayName": "Oxblood",
+        "canonical": "oklch(44.1% 0.128 29.3)",
+        "tonalRamp": [
+          "oklch(15% 0.032 29.3)",
+          "oklch(26% 0.051 29.3)",
+          "oklch(37% 0.087 29.3)",
+          "oklch(48% 0.122 29.3)",
+          "oklch(59% 0.128 29.3)",
+          "oklch(70% 0.096 29.3)",
+          "oklch(82% 0.058 29.3)",
+          "oklch(95% 0.032 29.3)"
+        ]
+      },
+      "stop-bg": {
+        "role": "semantic",
+        "displayName": "Oxblood Tint",
+        "canonical": "oklch(94.5% 0.017 31.3)",
+        "tonalRamp": [
+          "oklch(15% 0.004 31.3)",
+          "oklch(26% 0.007 31.3)",
+          "oklch(37% 0.011 31.3)",
+          "oklch(48% 0.016 31.3)",
+          "oklch(59% 0.017 31.3)",
+          "oklch(70% 0.013 31.3)",
+          "oklch(82% 0.008 31.3)",
+          "oklch(95% 0.004 31.3)"
+        ]
+      },
+      "paper-dark": {
+        "role": "neutral",
+        "displayName": "Ivory Paper (dark)",
+        "canonical": "oklch(17.8% 0.003 67.8)",
+        "tonalRamp": [
+          "oklch(15% 0.001 67.8)",
+          "oklch(26% 0.001 67.8)",
+          "oklch(37% 0.002 67.8)",
+          "oklch(48% 0.002 67.8)",
+          "oklch(59% 0.003 67.8)",
+          "oklch(70% 0.002 67.8)",
+          "oklch(82% 0.001 67.8)",
+          "oklch(95% 0.001 67.8)"
+        ]
+      },
+      "card-dark": {
+        "role": "neutral",
+        "displayName": "Cream Leaf (dark)",
+        "canonical": "oklch(21.4% 0.004 84.6)",
+        "tonalRamp": [
+          "oklch(15% 0.001 84.6)",
+          "oklch(26% 0.002 84.6)",
+          "oklch(37% 0.003 84.6)",
+          "oklch(48% 0.004 84.6)",
+          "oklch(59% 0.004 84.6)",
+          "oklch(70% 0.003 84.6)",
+          "oklch(82% 0.002 84.6)",
+          "oklch(95% 0.001 84.6)"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Ink (dark)",
+        "canonical": "oklch(94.7% 0.01 81.9)",
+        "tonalRamp": [
+          "oklch(15% 0.003 81.9)",
+          "oklch(26% 0.004 81.9)",
+          "oklch(37% 0.007 81.9)",
+          "oklch(48% 0.01 81.9)",
+          "oklch(59% 0.01 81.9)",
+          "oklch(70% 0.008 81.9)",
+          "oklch(82% 0.005 81.9)",
+          "oklch(95% 0.003 81.9)"
+        ]
+      },
+      "muted-dark": {
+        "role": "neutral",
+        "displayName": "Pencil (dark)",
+        "canonical": "oklch(64.9% 0.016 80.7)",
+        "tonalRamp": [
+          "oklch(15% 0.004 80.7)",
+          "oklch(26% 0.007 80.7)",
+          "oklch(37% 0.011 80.7)",
+          "oklch(48% 0.015 80.7)",
+          "oklch(59% 0.016 80.7)",
+          "oklch(70% 0.012 80.7)",
+          "oklch(82% 0.007 80.7)",
+          "oklch(95% 0.004 80.7)"
+        ]
+      },
+      "faint-dark": {
+        "role": "neutral",
+        "displayName": "Vellum (dark)",
+        "canonical": "oklch(25.3% 0.006 78.2)",
+        "tonalRamp": [
+          "oklch(15% 0.002 78.2)",
+          "oklch(26% 0.003 78.2)",
+          "oklch(37% 0.004 78.2)",
+          "oklch(48% 0.006 78.2)",
+          "oklch(59% 0.006 78.2)",
+          "oklch(70% 0.005 78.2)",
+          "oklch(82% 0.003 78.2)",
+          "oklch(95% 0.002 78.2)"
+        ]
+      },
+      "line-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark)",
+        "canonical": "rgba(241, 237, 230, .12)",
+        "tonalRamp": [
+          "oklch(15% 0.003 81.9)",
+          "oklch(26% 0.004 81.9)",
+          "oklch(37% 0.007 81.9)",
+          "oklch(48% 0.01 81.9)",
+          "oklch(59% 0.01 81.9)",
+          "oklch(70% 0.008 81.9)",
+          "oklch(82% 0.005 81.9)",
+          "oklch(95% 0.003 81.9)"
+        ]
+      },
+      "leather-dark": {
+        "role": "primary",
+        "displayName": "Tanned Leather (dark)",
+        "canonical": "oklch(72.6% 0.088 61.7)",
+        "tonalRamp": [
+          "oklch(15% 0.022 61.7)",
+          "oklch(26% 0.035 61.7)",
+          "oklch(37% 0.06 61.7)",
+          "oklch(48% 0.084 61.7)",
+          "oklch(59% 0.088 61.7)",
+          "oklch(70% 0.066 61.7)",
+          "oklch(82% 0.04 61.7)",
+          "oklch(95% 0.022 61.7)"
+        ]
+      },
+      "leather-soft-dark": {
+        "role": "primary",
+        "displayName": "Leather Soft (dark)",
+        "canonical": "oklch(25.7% 0.021 60.3)",
+        "tonalRamp": [
+          "oklch(15% 0.005 60.3)",
+          "oklch(26% 0.008 60.3)",
+          "oklch(37% 0.014 60.3)",
+          "oklch(48% 0.02 60.3)",
+          "oklch(59% 0.021 60.3)",
+          "oklch(70% 0.016 60.3)",
+          "oklch(82% 0.009 60.3)",
+          "oklch(95% 0.005 60.3)"
+        ]
+      },
+      "good-dark": {
+        "role": "semantic",
+        "displayName": "Sage (dark)",
+        "canonical": "oklch(74% 0.063 163.6)",
+        "tonalRamp": [
+          "oklch(15% 0.016 163.6)",
+          "oklch(26% 0.025 163.6)",
+          "oklch(37% 0.043 163.6)",
+          "oklch(48% 0.06 163.6)",
+          "oklch(59% 0.063 163.6)",
+          "oklch(70% 0.048 163.6)",
+          "oklch(82% 0.029 163.6)",
+          "oklch(95% 0.016 163.6)"
+        ]
+      },
+      "good-soft-dark": {
+        "role": "semantic",
+        "displayName": "Sage Tint (dark)",
+        "canonical": "oklch(25.6% 0.018 165.4)",
+        "tonalRamp": [
+          "oklch(15% 0.005 165.4)",
+          "oklch(26% 0.007 165.4)",
+          "oklch(37% 0.012 165.4)",
+          "oklch(48% 0.017 165.4)",
+          "oklch(59% 0.018 165.4)",
+          "oklch(70% 0.014 165.4)",
+          "oklch(82% 0.008 165.4)",
+          "oklch(95% 0.005 165.4)"
+        ]
+      },
+      "warn-dark": {
+        "role": "semantic",
+        "displayName": "Tobacco (dark)",
+        "canonical": "oklch(81.7% 0.091 80.2)",
+        "tonalRamp": [
+          "oklch(15% 0.023 80.2)",
+          "oklch(26% 0.036 80.2)",
+          "oklch(37% 0.062 80.2)",
+          "oklch(48% 0.087 80.2)",
+          "oklch(59% 0.091 80.2)",
+          "oklch(70% 0.068 80.2)",
+          "oklch(82% 0.041 80.2)",
+          "oklch(95% 0.023 80.2)"
+        ]
+      },
+      "warn-bg-dark": {
+        "role": "semantic",
+        "displayName": "Tobacco Tint (dark)",
+        "canonical": "oklch(26.4% 0.023 80.8)",
+        "tonalRamp": [
+          "oklch(15% 0.006 80.8)",
+          "oklch(26% 0.009 80.8)",
+          "oklch(37% 0.016 80.8)",
+          "oklch(48% 0.022 80.8)",
+          "oklch(59% 0.023 80.8)",
+          "oklch(70% 0.018 80.8)",
+          "oklch(82% 0.011 80.8)",
+          "oklch(95% 0.006 80.8)"
+        ]
+      },
+      "stop-dark": {
+        "role": "semantic",
+        "displayName": "Oxblood (dark)",
+        "canonical": "oklch(79.6% 0.089 28.7)",
+        "tonalRamp": [
+          "oklch(15% 0.022 28.7)",
+          "oklch(26% 0.035 28.7)",
+          "oklch(37% 0.06 28.7)",
+          "oklch(48% 0.084 28.7)",
+          "oklch(59% 0.089 28.7)",
+          "oklch(70% 0.066 28.7)",
+          "oklch(82% 0.04 28.7)",
+          "oklch(95% 0.022 28.7)"
+        ]
+      },
+      "stop-bg-dark": {
+        "role": "semantic",
+        "displayName": "Oxblood Tint (dark)",
+        "canonical": "oklch(25.6% 0.037 28)",
+        "tonalRamp": [
+          "oklch(15% 0.009 28)",
+          "oklch(26% 0.015 28)",
+          "oklch(37% 0.025 28)",
+          "oklch(48% 0.035 28)",
+          "oklch(59% 0.037 28)",
+          "oklch(70% 0.028 28)",
+          "oklch(82% 0.017 28)",
+          "oklch(95% 0.009 28)"
+        ]
+      },
+      "bear-fur": {
+        "role": "tertiary",
+        "displayName": "Cub Fur (bear only)",
+        "canonical": "oklch(65.1% 0.095 62.2)",
+        "tonalRamp": [
+          "oklch(15% 0.024 62.2)",
+          "oklch(26% 0.038 62.2)",
+          "oklch(37% 0.064 62.2)",
+          "oklch(48% 0.09 62.2)",
+          "oklch(59% 0.095 62.2)",
+          "oklch(70% 0.071 62.2)",
+          "oklch(82% 0.043 62.2)",
+          "oklch(95% 0.024 62.2)"
+        ]
+      },
+      "bear-cream": {
+        "role": "tertiary",
+        "displayName": "Cub Cream (bear only)",
+        "canonical": "oklch(92.5% 0.04 80.9)",
+        "tonalRamp": [
+          "oklch(15% 0.01 80.9)",
+          "oklch(26% 0.016 80.9)",
+          "oklch(37% 0.027 80.9)",
+          "oklch(48% 0.038 80.9)",
+          "oklch(59% 0.04 80.9)",
+          "oklch(70% 0.03 80.9)",
+          "oklch(82% 0.018 80.9)",
+          "oklch(95% 0.01 80.9)"
+        ]
+      },
+      "bear-ink": {
+        "role": "tertiary",
+        "displayName": "Cub Ink (bear only)",
+        "canonical": "oklch(25.7% 0.017 50.7)",
+        "tonalRamp": [
+          "oklch(15% 0.004 50.7)",
+          "oklch(26% 0.007 50.7)",
+          "oklch(37% 0.011 50.7)",
+          "oklch(48% 0.016 50.7)",
+          "oklch(59% 0.017 50.7)",
+          "oklch(70% 0.013 50.7)",
+          "oklch(82% 0.008 50.7)",
+          "oklch(95% 0.004 50.7)"
+        ]
+      },
+      "bear-band": {
+        "role": "tertiary",
+        "displayName": "Sweatband (bear only)",
+        "canonical": "oklch(60.9% 0.062 164.1)",
+        "tonalRamp": [
+          "oklch(15% 0.016 164.1)",
+          "oklch(26% 0.025 164.1)",
+          "oklch(37% 0.042 164.1)",
+          "oklch(48% 0.059 164.1)",
+          "oklch(59% 0.062 164.1)",
+          "oklch(70% 0.047 164.1)",
+          "oklch(82% 0.028 164.1)",
+          "oklch(95% 0.016 164.1)"
+        ]
+      },
+      "bear-blush": {
+        "role": "tertiary",
+        "displayName": "Cub Blush (bear only)",
+        "canonical": "oklch(76.6% 0.089 35.8)",
+        "tonalRamp": [
+          "oklch(15% 0.022 35.8)",
+          "oklch(26% 0.035 35.8)",
+          "oklch(37% 0.06 35.8)",
+          "oklch(48% 0.084 35.8)",
+          "oklch(59% 0.089 35.8)",
+          "oklch(70% 0.066 35.8)",
+          "oklch(82% 0.04 35.8)",
+          "oklch(95% 0.022 35.8)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Today's workout title on the home anchor card."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page h1 and the day counter; 2.1rem on the celebration screen."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card headings (h2)."
+      },
+      "stat": {
+        "displayName": "Stat",
+        "purpose": "Headline numbers in stat blocks."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "All running text and values, with tabular figures."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase tracked section labels (h2.label or legend), form labels, tab labels, in Pencil. 12px floor."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Button and file-picker text."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card",
+        "value": "0 1px 1px rgba(27, 26, 23, .03), 0 12px 32px -12px rgba(27, 26, 23, .1)",
+        "purpose": "Every card. Dark theme: 0 12px 32px -12px rgba(0, 0, 0, .5)."
+      },
+      {
+        "name": "sticky-lift",
+        "value": "0 10px 30px -8px rgba(27, 26, 23, .35)",
+        "purpose": "Sticky action button floating above scrolling content."
+      }
+    ],
+    "motion": [
+      {
+        "name": "press",
+        "value": "opacity .15s",
+        "purpose": "Buttons dim to 65% while pressed."
+      },
+      {
+        "name": "state",
+        "value": "background .2s, color .2s",
+        "purpose": "Selection fill changes."
+      },
+      {
+        "name": "tick-pop",
+        "value": "pop .3s ease-out (scale .8 → 1)",
+        "purpose": "Exercise tick completes."
+      },
+      {
+        "name": "fade-in",
+        "value": "fade .4s ease-out (opacity 0, translateY 4px → rest)",
+        "purpose": "Screen content entering."
+      },
+      {
+        "name": "toast",
+        "value": "opacity .3s, transform .3s (rise 16px)",
+        "purpose": "Toast appears near the bottom; 6s with Undo."
+      },
+      {
+        "name": "bear-settle",
+        "value": "~6s of breathing after appearing or reacting, then still; render loop stops",
+        "purpose": "The bear cub at moments; one static frame under reduced motion."
+      },
+      {
+        "name": "demo-swap",
+        "value": "swap 2.6s steps(1) infinite",
+        "purpose": "Exercise start/end photos alternate."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "all animation and transition off",
+        "purpose": "prefers-reduced-motion: reduce; demos show the first frame only."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "column",
+        "value": "480px",
+        "purpose": "Max content width; no other breakpoints."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ink-filled main action.",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary { font: 600 .9rem system-ui, -apple-system, sans-serif; letter-spacing: .01em; border-radius: 10px; padding: 0 20px; height: 44px; cursor: pointer; transition: opacity .15s, background .2s, color .2s; background: #1b1a17; color: #f6f4ef; border: 1px solid #1b1a17; } .ds-btn-primary:active { opacity: .65; } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent, #9a5c32); outline-offset: 3px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default outlined button.",
+      "html": "<button class=\"ds-btn\">Skip today</button>",
+      "css": ".ds-btn { font: 600 .9rem system-ui, -apple-system, sans-serif; letter-spacing: .01em; border-radius: 10px; padding: 0 20px; height: 44px; cursor: pointer; transition: opacity .15s, background .2s, color .2s; background: transparent; color: #1b1a17; border: 1px solid rgba(27, 26, 23, .1); } .ds-btn:hover { background: #efebe4; } .ds-btn:active { opacity: .65; } .ds-btn:focus-visible { outline: 2px solid var(--accent, #9a5c32); outline-offset: 3px; }"
+    },
+    {
+      "name": "Link Button",
+      "kind": "button",
+      "refersTo": "button-link",
+      "description": "Inline text action in Tanned Leather.",
+      "html": "<button class=\"ds-link\">Delete</button>",
+      "css": ".ds-link { background: none; border: 0; padding: 0; font: 500 .9rem system-ui, sans-serif; color: #9a5c32; text-decoration: underline; text-decoration-color: rgba(154, 92, 50, .35); text-underline-offset: 4px; cursor: pointer; } .ds-link:hover { text-decoration-color: #9a5c32; } .ds-link:focus-visible { outline: 2px solid var(--accent, #9a5c32); outline-offset: 3px; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Toggle pill; selected fills with ink.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\" aria-pressed=\"true\">Dumbbells</button><button class=\"ds-chip\" aria-pressed=\"false\">Bench</button></div>",
+      "css": ".ds-chips { display: flex; gap: 10px; flex-wrap: wrap; } .ds-chip { height: 34px; padding: 0 15px; border-radius: 99px; border: 1px solid rgba(27, 26, 23, .1); background: transparent; color: #1b1a17; font: 500 .86rem system-ui, sans-serif; cursor: pointer; transition: background .2s, color .2s; } .ds-chip[aria-pressed=\"true\"] { background: #1b1a17; color: #f6f4ef; border-color: #1b1a17; } .ds-chip:hover { background: #efebe4; } .ds-chip[aria-pressed=\"true\"]:hover { background: #1b1a17; } .ds-chip:focus-visible { outline: 2px solid var(--accent, #9a5c32); outline-offset: 3px; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Cream card on ivory paper with an uppercase label and serif title.",
+      "html": "<section class=\"ds-card\"><h3 class=\"ds-label\">This week</h3><h2 class=\"ds-title\">Upper body A</h2><p class=\"ds-muted\">3 × 10 · 40 kg</p></section>",
+      "css": ".ds-card { background: #fffefb; color: #1b1a17; border: 1px solid rgba(27, 26, 23, .1); border-radius: 18px; padding: 24px; display: grid; gap: 18px; box-shadow: 0 1px 1px rgba(27, 26, 23, .03), 0 12px 32px -12px rgba(27, 26, 23, .1); font: 15px/1.55 system-ui, sans-serif; } .ds-label { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: #6f6a61; } .ds-title { margin: 0; font: 500 1.3rem/1.2 ui-serif, \"New York\", Georgia, serif; letter-spacing: -0.01em; } .ds-muted { margin: 0; color: #6f6a61; font-size: .84rem; }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Bare input with a bottom rule and uppercase label.",
+      "html": "<label class=\"ds-field\">Weight<input value=\"82.4\" inputmode=\"decimal\"></label>",
+      "css": ".ds-field { display: grid; gap: 8px; font: 600 .75rem system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #6f6a61; } .ds-field input { font: 1rem system-ui, sans-serif; letter-spacing: 0; color: #1b1a17; background: transparent; border: 0; border-bottom: 1px solid rgba(27, 26, 23, .1); border-radius: 0; padding: 8px 0 10px; font-variant-numeric: tabular-nums; } .ds-field input:focus { outline: none; border-bottom-color: #1b1a17; }"
+    },
+    {
+      "name": "Tab Bar",
+      "kind": "nav",
+      "refersTo": "nav-tab",
+      "description": "Fixed blurred bottom tabs; active tab in ink with a leather dot.",
+      "html": "<nav class=\"ds-tabs\"><button aria-current=\"page\">Today</button><button>Train</button><button>Food</button><button>More</button></nav>",
+      "css": ".ds-tabs { display: flex; justify-content: center; padding: 6px 14px 8px; background: rgba(246, 244, 239, .86); backdrop-filter: blur(18px); border-top: 1px solid rgba(27, 26, 23, .1); } .ds-tabs button { flex: 1; max-width: 96px; height: 46px; border: 0; background: none; color: #6f6a61; font: 600 .75rem system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; position: relative; cursor: pointer; } .ds-tabs button:hover { color: #1b1a17; } .ds-tabs button[aria-current=\"page\"] { color: #1b1a17; } .ds-tabs button[aria-current=\"page\"]::after { content: \"\"; position: absolute; left: 50%; bottom: 5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #9a5c32; } .ds-tabs button:focus-visible { outline: 2px solid #9a5c32; outline-offset: -2px; }"
+    },
+    {
+      "name": "Notices",
+      "kind": "custom",
+      "refersTo": "notice",
+      "description": "Note, notice and stop alert blocks.",
+      "html": "<div class=\"ds-msgs\"><div class=\"ds-note\">Claude raised your target to 2,150 kcal after this week's review.</div><div class=\"ds-notice\"><b>This pace is aggressive</b><span>A safer plan is 1,900 kcal a day.</span></div><div class=\"ds-alert\">Stop and rest. Chest pain during exercise needs a doctor's check.</div></div>",
+      "css": ".ds-msgs { display: grid; gap: 12px; font: .88rem/1.55 system-ui, sans-serif; } .ds-note, .ds-notice, .ds-alert { border-radius: 12px; padding: 16px 18px; display: grid; gap: 6px; } .ds-note { background: #f5ece3; color: #1b1a17; } .ds-notice { background: #f7efdf; color: #7d5418; } .ds-alert { background: #f8e9e6; color: #8c2f25; }"
+    },
+    {
+      "name": "Exercise Row",
+      "kind": "custom",
+      "refersTo": "tick",
+      "description": "Signature row: thumbnail, name and dose, circular ink tick.",
+      "html": "<div class=\"ds-ex\"><div class=\"ds-thumb\"></div><div class=\"ds-what\"><b>Incline dumbbell press</b><span>3 × 10 · 22 kg</span></div><button class=\"ds-tick\" aria-pressed=\"false\" aria-label=\"Mark done\"><svg viewBox=\"0 0 24 24\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></button></div><div class=\"ds-ex done\"><div class=\"ds-thumb\"></div><div class=\"ds-what\"><b>Seated cable row</b><span>3 × 12 · 45 kg</span></div><button class=\"ds-tick\" aria-pressed=\"true\" aria-label=\"Undo\"><svg viewBox=\"0 0 24 24\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></button></div>",
+      "css": ".ds-ex { display: grid; grid-template-columns: 60px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 16px 0; border-bottom: 1px solid rgba(27, 26, 23, .1); font: 15px/1.55 system-ui, sans-serif; color: #1b1a17; } .ds-thumb { width: 60px; aspect-ratio: 1; border-radius: 10px; background: #efebe4; } .ds-what { display: grid; gap: 3px; } .ds-what b { font-weight: 600; font-size: .98rem; line-height: 1.25; } .ds-what span { color: #6f6a61; font-size: .84rem; } .ds-ex.done .ds-what b { color: #6f6a61; text-decoration: line-through; text-decoration-color: rgba(27, 26, 23, .1); } .ds-tick { width: 36px; height: 36px; padding: 0; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid rgba(27, 26, 23, .1); background: transparent; cursor: pointer; } .ds-tick svg { width: 15px; height: 15px; stroke: transparent; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; } .ds-tick:hover { border-color: #6f6a61; } .ds-tick[aria-pressed=\"true\"] { background: #1b1a17; border-color: #1b1a17; } .ds-tick[aria-pressed=\"true\"] svg { stroke: #f6f4ef; } .ds-tick:focus-visible { outline: 2px solid #9a5c32; outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Training Journal",
+    "overview": "All For One looks like a well-kept personal notebook: ivory paper, dark ink, hairline rules, totals set in a book serif. It is a private record its one owner opens every day, so it is calm, legible and quick, not loud or gamified. The pages are mostly ink on paper; colour shows up only when it means something (done, rest, caution, stop), and the single warm accent, Tanned Leather, is used about as sparingly as a bookmark ribbon.\n\nThe density is that of a phone journal: one narrow column (480px max), generous margins, small precise controls, and numbers in tabular figures so weights and reps line up. Serif carries meaning (headlines, totals, the day's workout title, the effort win line); the system sans carries the work (labels, buttons, body). Small uppercase tracked labels act like the printed headings of a ruled page.\n\nThe one exception to the restraint is the bear cub, a toon-shaded companion drawn in its own palette. It earns that exception by being rare: it appears only at moments worth marking, in a slot of its own, and is still the rest of the time.",
+    "keyCharacteristics": [
+      "Ivory paper and near-black ink; light and dark themes are first-class.",
+      "Hairline borders (10–12% ink) do most of the structuring; shadows are faint.",
+      "Serif for headlines and numbers, system sans for everything operational.",
+      "Small uppercase tracked labels as section markers.",
+      "Ink-filled pills and circles for \"selected\" and \"done\"; no colour fills for state.",
+      "One leather accent, plus semantic tints for good, warning and stop.",
+      "The bear's colours appear nowhere but the bear, and the bear appears only at moments."
+    ],
+    "rules": [
+      {
+        "name": "The Ink-Means-Chosen Rule",
+        "body": "Selected and done states are shown by filling with ink (`ink` background, `paper` text). Never use leather or a semantic colour to mark a selection.",
+        "section": "colors"
+      },
+      {
+        "name": "The Bookmark Rule",
+        "body": "Tanned Leather is a ribbon, not a theme. It marks focus, links and one active indicator per view; it never fills a button or a large surface (only its soft tint may back a note card).",
+        "section": "colors"
+      },
+      {
+        "name": "The Cub's Colours Rule",
+        "body": "The bear's colours belong to the bear alone. UI chrome, buttons, charts and icons never borrow them.",
+        "section": "colors"
+      },
+      {
+        "name": "The Stop Is Unmistakable Rule",
+        "body": "Oxblood is reserved for stop messages and errors. Caution uses Tobacco. The two must never be swapped or blended, and a stop message is never softened into a notice.",
+        "section": "colors"
+      },
+      {
+        "name": "The Serif-For-Meaning Rule",
+        "body": "Serif is for headlines and numbers the owner reads as results. Controls, labels and running text stay in the system sans.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "All numbers render with tabular figures (set on `body`) so columns of weights, reps and dates align.",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline-First Rule",
+        "body": "Separate with a 1px Hairline before reaching for a shadow or a fill. A new surface earns a shadow only if it floats over scrolling content.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** mark selected and completed states by filling with Ink and inverting text to Ivory Paper.",
+      "**Do** separate list items and sections with a 1px Hairline (`line`) before adding boxes or shadows.",
+      "**Do** set headlines, totals and stepper values in the serif at weight 500 with slight negative tracking.",
+      "**Do** keep every new colour paired with a `-dark` counterpart and swap it under `prefers-color-scheme: dark`.",
+      "**Do** make every tap target at least 44px, extending small controls with an invisible hit area; the app is used mid-set.",
+      "**Do** ask twice before anything destructive that cannot be undone, and offer Undo for anything that can.",
+      "**Do** honour `prefers-reduced-motion`: every animation and transition switches off, and exercise photos show only the first frame.",
+      "**Do** keep motion short and physical: 0.15–0.5s fades, a .3s pop on tick, the bear's brief settle."
+    ],
+    "donts": [
+      "**Don't** use the bear's colours, `#ff5a1f`, or any saturated orange in UI chrome, buttons, charts or illustrations.",
+      "**Don't** put the bear on every screen, over data, or in a place where it keeps animating; it is for moments.",
+      "**Don't** set any text below 12px or muted text below 4.5:1.",
+      "**Don't** fill buttons or large surfaces with Tanned Leather; it marks focus, links and the active indicator only.",
+      "**Don't** use Oxblood for anything but stop messages and errors, or style a stop message as a notice.",
+      "**Don't** load web fonts; the system serif and sans are the faces.",
+      "**Don't** box inputs; fields are a single bottom rule.",
+      "**Don't** add heavy shadows to static cards; only floating sticky controls get a pronounced lift.",
+      "**Don't** widen the column beyond 480px or introduce multi-column desktop layouts."
+    ]
+  }
+}

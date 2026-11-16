@@ -26,6 +26,7 @@ const LEVELS = { beginner: ['New to this', 'Little or no training lately'], inte
 const KIT = { dumbbell: 'Dumbbells', barbell: 'Barbell', kettlebells: 'Kettlebells', bands: 'Bands', cable: 'Cables', machine: 'Machines', other: 'Pull-up or dip bars', 'e-z curl bar': 'EZ bar', 'exercise ball': 'Exercise ball', 'medicine ball': 'Medicine ball', 'foam roll': 'Foam roller' };
 const FEELINGS = ['Strong', 'Good', 'Tired', 'Sore', 'Drained'];
 const SYMPTOMS = ['Knee', 'Lower back', 'Shoulder', 'Wrist', 'Dizzy', 'Chest pain', 'Short of breath'];
+const RED_FLAGS = ['Dizzy', 'Chest pain', 'Short of breath']; // the same list the server uses for stop advice
 const EFFORT = ['', 'Very easy', 'Easy', 'Easy', 'Comfortable', 'Moderate', 'Moderate', 'Hard', 'Hard', 'Very hard', 'All out'];
 const UNLOCK_AT = { trends: 3, body: 7, fine_tuning: 14 };
 const LB = 2.20462;
@@ -59,11 +60,27 @@ async function api(method, path, body) {
 }
 
 let toastTimer;
-function toast(message) {
+// A short message at the bottom of the screen. With `undo`, it carries an Undo button and stays longer.
+function toast(message, undo) {
   $toast.textContent = message;
+  if (undo) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Undo' });
+    b.onclick = () => { $toast.classList.remove('show', 'has-undo'); Promise.resolve(undo()).then(load).then(() => toast('Undone.')).catch((e) => toast(e.message)); };
+    $toast.append(b);
+  }
+  $toast.classList.toggle('has-undo', !!undo);
   $toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => $toast.classList.remove('show'), 2800);
+  toastTimer = setTimeout(() => $toast.classList.remove('show', 'has-undo'), undo ? 6000 : 2800);
+}
+
+// Destructive taps ask twice: the first tap turns the button into a plain statement of what will
+// happen, and it resets on its own if the second tap never comes.
+function armed(el, prompt) {
+  if (el.dataset.armed) return true;
+  el.dataset.armed = '1'; el.dataset.label = el.textContent; el.textContent = prompt; el.classList.add('armed');
+  setTimeout(() => { if (el.isConnected && el.dataset.armed) { delete el.dataset.armed; el.textContent = el.dataset.label; el.classList.remove('armed'); } }, 4000);
+  return false;
 }
 
 async function load() {
@@ -92,10 +109,12 @@ async function save(work, message) {
 }
 
 /* ---------- the companion ---------- */
-// A bear cub that lives on the page (see mascot.js). It is loaded after the first screen is drawn,
-// so the app never waits for it. Until then these calls do nothing.
+// A bear cub (see mascot.js). It only turns up for moments worth marking: finishing a workout, a
+// workout already done today, and streak milestones. It never sits on data. It is loaded after the
+// first screen is drawn, so the app never waits for it. Until then these calls do nothing.
 
-let mascot = { shape() {}, react() {}, busy() {} };
+let mascot = { shape() {}, react() {}, busy() {}, wake() {} };
+const MILESTONES = [3, 7, 14, 21, 30, 60, 100, 200, 365];
 import('/mascot.js').then((m) => { mascot = m.mascot; mascot.shape(); }).catch(() => {});
 
 // A spot for the companion to stand. `mood` picks how it behaves there: happy, cheer or sleepy.
@@ -115,7 +134,7 @@ const dose = (x) => `${x.sets} × ${x.reps}${x.weight_kg ? ` · ${wOut(x.weight_
 function authScreen() {
   const claim = state.data.can_sign_up;
   return `<div class="auth-page"><main class="auth-card fade">
-    <div class="row"><div class="fit">${perch('happy', 72)}</div><div><h1>All For One</h1><p class="muted">${claim ? 'Create your account to claim this app. Sign-up closes after that.' : 'Welcome back.'}</p></div></div>
+    <div><h1>All For One</h1><p class="muted">${claim ? 'Create your account to claim this app. Sign-up closes after that.' : 'Welcome back.'}</p></div>
     ${state.authError ? `<p class="error">${esc(state.authError)}</p>` : ''}
     <form id="auth" data-mode="${claim ? 'signup' : 'login'}">
       <label>Email<input name="email" type="email" autocomplete="username" required></label>
@@ -133,8 +152,8 @@ function introScreen() {
     () => `<h1>What matters most right now?</h1>${pick('primary_goal', GOALS)}`,
     () => `<h1>Where are you starting from?</h1>${pick('fitness_level', LEVELS)}`,
     () => `<h1>How much time do you have?</h1>
-      <div class="stack"><h3>Per workout</h3>${chips('minutes', [20, 30, 45, 60], (v) => `${v} min`)}</div>
-      <div class="stack"><h3>Workouts a week</h3>${chips('days_per_week', [2, 3, 4, 5, 6], (v) => v)}</div>
+      <div class="stack"><h2 class="label">Per workout</h2>${chips('minutes', [20, 30, 45, 60], (v) => `${v} min`)}</div>
+      <div class="stack"><h2 class="label">Workouts a week</h2>${chips('days_per_week', [2, 3, 4, 5, 6], (v) => v)}</div>
       <button class="go" data-action="intro-next" ${s.minutes && s.days_per_week ? '' : 'disabled'}>Next</button>`,
     () => `<h1>What can you train with?</h1><p class="muted">Pick everything you have. Bodyweight is always included.</p>
       <div class="chips">${Object.entries(KIT).map(([k, v]) => `<button data-action="intro-kit" data-value="${k}" aria-pressed="${s.equipment.includes(k)}">${v}</button>`).join('')}</div>
@@ -150,7 +169,7 @@ function introScreen() {
   ];
   return `<div class="shell bare fade">
     <div class="bar-top">${s.step ? '<button class="link fit" data-action="intro-back">Back</button>' : ''}${segments(s.step + 1, steps.length)}</div>
-    <div class="hello">${perch('happy', 64)}<p>${['Five quick questions and you\'re in.', 'Got it.', 'No wrong answers here.', 'Nearly there.', 'Then I\'ll build your first week.'][s.step]}</p></div>
+    <div class="hello"><p>${['Five quick questions and you\'re in.', 'Got it.', 'No wrong answers here.', 'Nearly there.', 'Then I\'ll build your first week.'][s.step]}</p></div>
     ${steps[s.step]()}
   </div>`;
 }
@@ -159,6 +178,8 @@ function introScreen() {
 
 function greeting(d) {
   const s = d.streak;
+  const stop = d.workout.done_today && d.workout.done_today.advice && d.workout.done_today.advice.level === 'stop';
+  if (stop) return ['rest', 'Workout saved. Rest before the next one.'];
   if (d.workout.done_today) return ['cheer', 'Workout done. Enjoy that.'];
   if (!s.checked_in_today && s.days === 0) return ['sleepy', 'A quick check-in gets things moving.'];
   if (s.days >= 3) return ['happy', `${s.days} days in a row. Keep it going.`];
@@ -170,22 +191,22 @@ function anchor(d) {
   const w = d.workout;
   if (w.active) {
     const done = w.active.items.filter((i) => i.done).length;
-    return `<section class="card anchor"><h3>In progress</h3><p class="title">${esc(w.active.day_name)}</p>${segments(done, w.active.items.length)}
+    return `<section class="card anchor"><h2 class="label">In progress</h2><p class="title">${esc(w.active.day_name)}</p>${segments(done, w.active.items.length)}
       <button class="go" data-action="resume">Continue · ${done} of ${w.active.items.length} done</button></section>`;
   }
   if (w.done_today) {
-    return `<section class="card anchor done"><h3>Today</h3><p class="title">${esc(w.done_today.day_name)} done</p><p class="win">${esc(w.done_today.win)}</p>
+    return `<section class="card anchor done"><h2 class="label">Today</h2><p class="title">${esc(w.done_today.day_name)} done</p><p class="win">${esc(w.done_today.win)}</p>
       ${w.done_today.effort_meaning ? `<p class="muted small">Effort ${w.done_today.effort} of 10: ${esc(w.done_today.effort_meaning)}</p>` : ''}
       ${w.done_today.kcal ? `<p class="muted small">${w.done_today.kcal} kcal burned, from Apple Health.</p>` : ''}
       ${w.done_today.advice ? `<div class="${w.done_today.advice.level === 'stop' ? 'alert' : 'notice'}">${esc(w.done_today.advice.message)}</div>` : ''}
       ${w.next ? `<p class="muted small">Next up: ${esc(w.next.name)}</p>` : ''}</section>`;
   }
-  if (!w.next) return `<section class="card anchor"><h3>Today</h3><p class="title">No plan yet</p><button class="go" data-action="rebuild">Build my plan</button></section>`;
+  if (!w.next) return `<section class="card anchor"><h2 class="label">Today</h2><p class="title">No plan yet</p><button class="go" data-action="rebuild">Build my plan</button></section>`;
   if (w.week.goal && w.week.done >= w.week.goal) {
-    return `<section class="card anchor rest"><h3>Today</h3><p class="title">Rest day</p><p>You've done all ${w.week.goal} workouts this week. Recovery is part of the plan.</p>
+    return `<section class="card anchor rest"><h2 class="label">Today</h2><p class="title">Rest day</p><p>You've done all ${w.week.goal} workouts this week. Recovery is part of the plan.</p>
       <button class="link fit" data-action="start">Do a bonus session: ${esc(w.next.name)}</button></section>`;
   }
-  return `<section class="card anchor"><h3>Today's workout</h3><p class="title">${esc(w.next.name)}</p>
+  return `<section class="card anchor"><h2 class="label">Today's workout</h2><p class="title">${esc(w.next.name)}</p>
     <p class="muted">${w.next.exercises.length} exercises · about ${w.next.minutes} min</p>
     <button class="go" data-action="start">Start</button></section>`;
 }
@@ -195,18 +216,18 @@ function todayScreen() {
   const log = d.today_log || {};
   const t = d.target;
   const [mood, line] = greeting(d);
+  const moment = mood !== 'rest' && (d.workout.done_today || (d.streak.checked_in_today && MILESTONES.includes(d.streak.days)));
   const checkSummary = log.target_met === true ? 'On target' : log.target_met === false ? 'Missed today' : log.calories != null ? `${log.calories} kcal` : 'Not logged';
   const pct = t && log.calories != null ? Math.min(100, Math.round((log.calories / t.calories) * 100)) : 0;
   const note = t && t.set_by === 'claude' && t.reason ? `<div class="note"><b>Coach's note</b><span>${esc(t.reason)}</span></div>` : '';
-  return `<div class="hello"><div><h1>${d.streak.days ? `Day ${d.streak.days}` : 'Today'}</h1><p>${line}</p></div></div>
-    <div class="stack" style="gap:8px"><div class="row"><h3>This week</h3><span class="muted small fit">${d.workout.week.done}${d.workout.week.goal ? ` of ${d.workout.week.goal}` : ''} workouts</span></div>${segments(d.workout.week.done, d.workout.week.goal)}</div>
-    <div class="seat-row"><span class="seat" data-mascot="sit" data-mood="${mood}" data-size="84"></span></div>
+  return `<div class="hello"><div><h1>${d.streak.days ? `Day ${d.streak.days}` : 'Today'}</h1><p>${line}</p></div>${moment ? perch(mood === 'sleepy' ? 'happy' : mood, 64) : ''}</div>
+    <div class="stack" style="gap:8px"><div class="row"><h2 class="label">This week</h2><span class="muted small fit">${d.workout.week.done}${d.workout.week.goal ? ` of ${d.workout.week.goal}` : ''} workouts</span></div>${segments(d.workout.week.done, d.workout.week.goal)}</div>
     ${anchor(d)}
     ${d.review.latest ? `<details class="card" data-keep="review" ${state.open === 'review' ? 'open' : ''}><summary>Coach review<span>${niceDate(d.review.latest.period_end)}</span></summary><div class="inside"><p style="white-space:pre-line">${esc(d.review.latest.summary)}</p><p class="muted small">Next review in ${d.review.days_until} days.</p></div></details>` : ''}
     <details class="card" data-keep="check" ${state.open === 'check' ? 'open' : ''}>
       <summary>Food check<span>${checkSummary}</span></summary>
       <div class="inside">
-        ${t ? `<div class="stack" style="gap:6px"><div class="row"><b>${t.calories} kcal target</b><span class="muted small fit">${log.calories != null ? `${Math.max(0, t.calories - log.calories)} left` : ''}</span></div><div class="meter"><i style="width:${pct}%"></i></div></div>` : '<p class="muted small">Set a goal in Plan to get a calorie target.</p>'}
+        ${t ? `<div class="stack" style="gap:6px"><div class="row"><b>${t.calories} kcal target</b><span class="muted small fit">${log.calories != null ? `${Math.max(0, t.calories - log.calories)} left` : ''}</span></div><div class="meter"><i style="width:${pct}%"></i></div></div>` : `<p class="muted small">${d.goal ? 'Your goal is set. Choose a calorie target in Plan.' : 'Set a goal in Plan to get a calorie target.'}</p>`}
         ${note}
         <div class="choice">
           <button data-action="met" data-value="1" aria-pressed="${log.target_met === true}">On target</button>
@@ -239,7 +260,7 @@ function workoutScreen() {
   const done = s.items.filter((i) => i.done).length;
   return `<div class="shell bare">
     <div class="bar-top"><button class="link fit" data-action="leave">Back</button>${segments(done, s.items.length)}<span class="muted small fit">${done}/${s.items.length}</span></div>
-    <div class="row" style="align-items:end"><h1>${esc(s.day_name)}</h1><span class="fit">${perch('happy', 76)}</span></div>
+    <h1>${esc(s.day_name)}</h1>
     <p class="muted small" style="margin-top:-8px">Tap the circle when an exercise is done. Tap its name to see how.</p>
     ${s.items.map((x) => `<div class="exercise ${x.done ? 'done' : ''}">
       ${demo(x.exercise_id, true)}
@@ -252,21 +273,27 @@ function workoutScreen() {
       </div>` : ''}
     </div>`).join('')}
     <button class="go sticky" data-action="to-finish">${done === s.items.length ? 'Finish workout' : done ? `Finish with ${done} of ${s.items.length}` : 'Finish'}</button>
-    <button class="link" data-action="cancel-workout">Discard this workout</button>
+    <button class="link danger-link" data-action="cancel-workout">Discard this workout</button>
   </div>`;
 }
 
+// One question at a time: effort first, then how you feel. Symptoms stay folded away until asked
+// for, and warning signs are kept apart so picking one shows the stop message straight away.
 function finishScreen() {
   const f = state.finish;
+  const chip = (action, v, on) => `<button data-action="${action}" data-value="${v}" aria-pressed="${on}">${v}</button>`;
+  const red = f.symptoms.filter((v) => RED_FLAGS.includes(v));
+  const hurt = f.hurt || f.symptoms.length;
   return `<div class="shell bare fade">
     <div class="bar-top"><button class="link fit" data-action="resume">Back</button></div>
     <h1>How hard was that?</h1>
     <div class="scale">${Array.from({ length: 10 }, (_, i) => `<button data-action="effort" data-value="${i + 1}" aria-pressed="${f.effort === i + 1}">${i + 1}</button>`).join('')}</div>
     <p class="muted">${f.effort ? EFFORT[f.effort] : '1 is a stroll, 10 is everything you had.'}</p>
-    <h2>How do you feel?</h2>
-    <div class="chips">${FEELINGS.map((v) => `<button data-action="feeling" data-value="${v}" aria-pressed="${f.feeling === v}">${v}</button>`).join('')}</div>
-    <h2>Anything hurt or feel off?</h2>
-    <div class="chips">${SYMPTOMS.map((v) => `<button data-action="symptom" data-value="${v}" aria-pressed="${f.symptoms.includes(v)}">${v}</button>`).join('')}</div>
+    ${f.effort ? `<fieldset class="group fade"><legend><h2>How do you feel?</h2></legend><div class="chips">${FEELINGS.map((v) => chip('feeling', v, f.feeling === v)).join('')}</div></fieldset>` : ''}
+    ${hurt ? `<fieldset class="group"><legend><h2>Anything hurt?</h2></legend><div class="chips">${SYMPTOMS.filter((v) => !RED_FLAGS.includes(v)).map((v) => chip('symptom', v, f.symptoms.includes(v))).join('')}</div></fieldset>
+      <fieldset class="group"><legend class="label">Warning signs</legend><div class="chips">${RED_FLAGS.map((v) => chip('symptom', v, f.symptoms.includes(v))).join('')}</div></fieldset>
+      ${red.length ? `<div class="alert" role="alert">${esc(red.join(' and '))} during exercise should be checked by a doctor before you train again. If it is severe or does not pass, get medical help now.</div>` : ''}`
+      : '<button class="link" data-action="hurt">Something hurt or felt off?</button>'}
     <button class="go" data-action="finish">Save</button>
     <button class="link" data-action="finish" data-skip="1">Skip</button>
   </div>`;
@@ -274,9 +301,15 @@ function finishScreen() {
 
 function celebrateScreen() {
   const r = state.result;
+  // A stop message is not a moment to celebrate: no sparks, no bear, and the advice comes first.
+  if (r.advice && r.advice.level === 'stop') {
+    return `<div class="celebrate"><h1>Workout saved</h1><div class="alert" role="alert" style="text-align:left">${esc(r.advice.message)}</div>
+      <div style="width:220px">${segments(r.week.done, r.week.goal)}</div>
+      <button class="go" data-action="home" style="min-width:200px">Done</button></div>`;
+  }
   const sparks = Array.from({ length: 14 }, (_, i) => { const a = (i / 14) * Math.PI * 2; return `<i style="--x:${Math.round(Math.cos(a) * (110 + (i % 3) * 30))}px;--y:${Math.round(Math.sin(a) * (110 + (i % 3) * 30))}px"></i>`; }).join('');
   return `<div class="celebrate"><div class="sparks" aria-hidden="true">${sparks}</div>
-    ${perch('cheer', 210)}
+    ${perch('cheer', 150)}
     <h1>${esc(r.win)}</h1>
     <div style="width:220px">${segments(r.week.done, r.week.goal)}</div>
     ${r.effort_meaning ? `<p class="muted">${esc(r.effort_meaning)}</p>` : ''}
@@ -290,7 +323,7 @@ function celebrateScreen() {
 function locked(key, title, text) {
   const have = state.data.streak.active_days;
   const need = UNLOCK_AT[key];
-  return `<section class="card locked">${perch('sleepy', 72)}<h2>${title}</h2><p class="muted">${text}</p>
+  return `<section class="card locked"><h2>${title}</h2><p class="muted">${text}</p>
     <div style="width:100%;max-width:220px">${segments(Math.min(have, need), need)}</div>
     <p class="muted small">${have} of ${need} check-in days. Any workout, food check or weigh-in counts.</p></section>`;
 }
@@ -327,7 +360,8 @@ function bodyScreen() {
   const bf = d.latest.body_fat;
   const m = d.latest.measurements;
   const needs = d.profile.sex === 'female' ? 'neck, waist and hips' : 'neck and waist';
-  const trend = change == null ? '' : change < 0 ? `Down ${-change} ${wUnit()} in 90 days.` : change > 0 ? `Up ${change} ${wUnit()} in 90 days.` : 'Holding steady.';
+  const since = first ? niceDate(first.date) : '';
+  const trend = change == null ? '' : change < 0 ? `Down ${-change} ${wUnit()} since ${since}.` : change > 0 ? `Up ${change} ${wUnit()} since ${since}.` : `Holding steady since ${since}.`;
   return `${head}
     <section class="card">
       <div class="split">
@@ -345,10 +379,10 @@ function bodyScreen() {
           ${SITES.map((s) => `<label>${cap(s)}<input name="${s}" inputmode="decimal" placeholder="${lOut(m[s]) || ''}"></label>`).join('')}
           <button class="primary" style="grid-column:1/-1">Save measurements</button>
         </form>
-        ${h.body_fat.length > 1 ? `<h3>Body fat history</h3><div class="list">${h.body_fat.slice().reverse().map((p) => `<div><span>${niceDate(p.date)}</span><b>${p.pct}%</b></div>`).join('')}</div>` : ''}
+        ${h.body_fat.length > 1 ? `<h2 class="label">Body fat history</h2><div class="list">${h.body_fat.slice().reverse().map((p) => `<div><span>${niceDate(p.date)}</span><b>${p.pct}%</b></div>`).join('')}</div>` : ''}
       </div>
     </details>` : locked('body', 'Body measurements come next', 'Tape measurements and your body-fat number open up after a week of check-ins.')}
-    ${h.weights.length ? `<details class="card"><summary>Weight entries<span>${h.weights.length}</span></summary><div class="inside"><div class="list">${h.weights.slice().reverse().slice(0, 30).map((w) => `<div><span>${niceDate(w.date)}</span><span><b>${wOut(w.kg)} ${wUnit()}</b> <button class="link" data-action="del-weight" data-date="${w.date}" aria-label="Delete weight for ${niceDate(w.date)}">Delete</button></span></div>`).join('')}</div></div></details>` : ''}`;
+    ${h.weights.length ? `<details class="card"><summary>Weight entries<span>${h.weights.length}</span></summary><div class="inside"><div class="list">${h.weights.slice().reverse().slice(0, 30).map((w) => `<div><span>${niceDate(w.date)}</span><span><b>${wOut(w.kg)} ${wUnit()}</b> <button class="link" data-action="del-weight" data-date="${w.date}" data-kg="${w.kg}" aria-label="Delete weight for ${niceDate(w.date)}">Delete</button></span></div>`).join('')}</div></div></details>` : ''}`;
 }
 
 /* ---------- plan ---------- */
@@ -385,10 +419,10 @@ function planScreen() {
   const live = hist.find((x) => !x.reverted_at);
   return `<h1 class="page-title">Plan</h1>
     ${p && p.set_by === 'claude' && p.reason ? `<div class="note"><b>Coach's note</b><span>${esc(p.reason)}</span></div>` : ''}
-    <h3>Your week</h3>
+    <h2 class="label">Your week</h2>
     ${days || '<p class="muted">No plan yet.</p>'}
-    <button class="link" data-action="rebuild">${p ? 'Rebuild the plan from my profile' : 'Build my plan'}</button>
-    <h3>Goal</h3>
+    <button class="link" data-action="rebuild" ${p ? 'data-confirm' : ''}>${p ? 'Rebuild the plan from my profile' : 'Build my plan'}</button>
+    <h2 class="label">Goal</h2>
     <section class="card">
       <form id="goal" class="stack">
         <div class="split">
@@ -396,11 +430,11 @@ function planScreen() {
           <label>Target weight (${wUnit()})<input name="target_weight" inputmode="decimal" value="${g?.target_weight_kg ? wOut(g.target_weight_kg) : ''}" placeholder="optional"></label>
         </div>
         <label>Reach it by<input name="target_date" type="date" value="${g?.target_date ?? ''}" min="${d.today}" required></label>
-        <div class="stack" style="gap:8px"><span class="small muted" style="font-weight:600;font-size:.8rem">Areas to define</span><div class="chips" id="areas">${AREAS.map((a) => `<button type="button" data-action="area" data-area="${a}" aria-pressed="${areas.has(a)}">${cap(a === 'calf' ? 'calves' : a)}</button>`).join('')}</div></div>
+        <fieldset class="group"><legend class="label">Areas to define</legend><div class="chips" id="areas">${AREAS.map((a) => `<button type="button" data-action="area" data-area="${a}" aria-pressed="${areas.has(a)}">${cap(a === 'calf' ? 'calves' : a)}</button>`).join('')}</div></fieldset>
         <button class="primary">${g ? 'Update goal' : 'Set goal'}</button>
       </form>
     </section>
-    <h3>Calories</h3>
+    <h2 class="label">Calories</h2>
     <section class="card">${target}</section>
     ${hist.length ? `<details class="card"><summary>Target history<span>${hist.length}</span></summary><div class="inside"><div class="list">${hist.map((t) => `<div><span><b>${t.calories} kcal</b>${t.protein_g ? ` · ${t.protein_g} g protein` : ''}<br><span class="muted small">${niceDate(t.created_at.slice(0, 10))} · set by ${esc(t.set_by)}${t.reverted_at ? ' · undone' : ''}${t.reason ? `<br>${esc(t.reason)}` : ''}</span></span>${t === live ? '<button class="link fit" data-action="revert">Undo</button>' : ''}</div>`).join('')}</div></div></details>` : ''}`;
 }
@@ -414,16 +448,17 @@ function settingsScreen() {
   const opt = (map, cur) => Object.entries(map).map(([k, v]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${Array.isArray(v) ? v[0] : v}</option>`).join('');
   return `<h1 class="page-title">More</h1>
     <section class="card">
-      <h3>Training</h3>
+      <h2 class="label">Training</h2>
       <form id="training" class="stack">
         <div class="split"><label>Main goal<select name="primary_goal">${opt(GOALS, p.primary_goal)}</select></label><label>Level<select name="fitness_level">${opt(LEVELS, p.fitness_level)}</select></label></div>
         <div class="split"><label>Minutes per workout<input name="minutes" inputmode="numeric" value="${p.minutes ?? ''}" required></label><label>Workouts a week<input name="days_per_week" inputmode="numeric" value="${p.days_per_week ?? ''}" required></label></div>
-        <div class="stack" style="gap:8px"><span class="small muted" style="font-weight:600;font-size:.8rem">Equipment you have</span><div class="chips" id="kit">${Object.entries(KIT).map(([k, v]) => `<button type="button" data-action="area" data-kit="${k}" aria-pressed="${p.equipment.includes(k)}">${v}</button>`).join('')}</div></div>
+        <fieldset class="group"><legend class="label">Equipment you have</legend><div class="chips" id="kit">${Object.entries(KIT).map(([k, v]) => `<button type="button" data-action="area" data-kit="${k}" aria-pressed="${p.equipment.includes(k)}">${v}</button>`).join('')}</div></fieldset>
         <button class="primary">Save and rebuild plan</button>
+        <p class="muted small">Saving replaces your current week of workouts with a new plan.</p>
       </form>
     </section>
     <section class="card">
-      <h3>About you</h3>
+      <h2 class="label">About you</h2>
       <form id="profile" class="stack">
         <label>Sex, used only for the body-fat and energy formulas<select name="sex" required><option value="male" ${p.sex === 'male' ? 'selected' : ''}>Male</option><option value="female" ${p.sex === 'female' ? 'selected' : ''}>Female</option></select></label>
         <div class="split"><label>Birth year<input name="birth_year" inputmode="numeric" value="${p.birth_year ?? ''}" required></label><label>Height (${lUnit()})<input name="height" inputmode="decimal" value="${lOut(p.height_cm)}" required></label></div>
@@ -439,7 +474,7 @@ function settingsScreen() {
       <p class="muted small">Trends, body measurements and fine-tuning normally open up after 3, 7 and 14 check-in days. Turn this on to skip the wait.</p>
     </section>
     <section class="card">
-      <h3>Connect Claude</h3>
+      <h2 class="label">Connect Claude</h2>
       <p class="small">In Claude, add a custom connector with this address, then sign in with your All For One email and password when asked.</p>
       <code>${esc(url)}</code>
       <button data-action="copy" data-text="${esc(url)}">Copy address</button>
@@ -543,29 +578,29 @@ function foodScreen() {
       <label>Where you shop<select name="store"><option value="">Choose</option>${CHAINS.map((c) => `<option ${p.store === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       <div class="split"><label>Weekly budget ($)<input name="weekly_budget" inputmode="decimal" value="${p.weekly_budget ?? ''}"></label><label>People to feed<input name="household" inputmode="numeric" value="${p.household ?? 1}"></label></div>
       <label>Postal code, for local flyers<input name="postal" value="${esc(p.postal ?? '')}" autocomplete="postal-code"></label>
-      <div class="stack" style="gap:10px"><h3>Dietary needs</h3><div class="chips" id="diet">${DIETS.map((x) => `<button type="button" data-action="area" data-diet="${x}" aria-pressed="${p.diet.includes(x)}">${cap(x)}</button>`).join('')}</div></div>
+      <fieldset class="group"><legend class="label">Dietary needs</legend><div class="chips" id="diet">${DIETS.map((x) => `<button type="button" data-action="area" data-diet="${x}" aria-pressed="${p.diet.includes(x)}">${cap(x)}</button>`).join('')}</div></fieldset>
       <button class="primary">Save</button>
     </form></div></details>`;
   const meals = plan ? plan.days.map((day, i) => `<details class="card" data-keep="meal${i}" ${state.open === `meal${i}` ? 'open' : ''}><summary>${esc(day.day)}<span>${Math.round(day.meals.reduce((s, m) => s + (m.kcal || 0), 0))} kcal</span></summary>
       <div class="inside"><div>${day.meals.map((m) => `<div class="meal"><div><small>${m.slot}</small>${esc(m.name)}${m.ingredients.length ? `<br><span class="muted small">${esc(m.ingredients.join(', '))}</span>` : ''}</div><span class="muted small fit">${m.kcal ? `${Math.round(m.kcal)} kcal` : ''}${m.protein_g ? `<br>${Math.round(m.protein_g)} g protein` : ''}</span></div>`).join('')}</div></div></details>`).join('')
     : `<section class="card locked"><h2>No meal plan yet</h2><p class="muted">Your coach writes this each week from your targets, store prices and budget. Once Claude is connected, ask it to plan your meals for the week.</p></section>`;
   const spent = plan ? plan.shopping.filter((s) => s.bought).reduce((s, x) => s + (x.est_price || 0), 0) : 0;
-  const shopping = plan && plan.shopping.length ? `<section class="card"><div class="row"><h3>Shopping list</h3><span class="muted small fit">${money(plan.est_cost)}${p.weekly_budget ? ` of ${money(p.weekly_budget)}` : ''}</span></div>
+  const shopping = plan && plan.shopping.length ? `<section class="card"><div class="row"><h2 class="label">Shopping list</h2><span class="muted small fit">${money(plan.est_cost)}${p.weekly_budget ? ` of ${money(p.weekly_budget)}` : ''}</span></div>
       ${p.weekly_budget ? `<div class="meter"><i style="width:${Math.min(100, Math.round((plan.est_cost / p.weekly_budget) * 100))}%"></i></div>` : ''}
       ${p.weekly_budget && plan.est_cost > p.weekly_budget ? `<div class="notice">This list is about ${money(plan.est_cost - p.weekly_budget)} over your budget.</div>` : ''}
       <div class="list">${plan.shopping.map((s, i) => `<label><span class="row" style="gap:12px"><input type="checkbox" class="fit" data-action="bought" data-index="${i}" ${s.bought ? 'checked' : ''}><span class="${s.bought ? 'bought' : ''}">${esc(s.item)}${s.qty ? ` <span class="muted small">${esc(s.qty)}</span>` : ''}</span></span><span class="muted small">${money(s.est_price)}</span></label>`).join('')}</div>
       <p class="muted small">Prices are estimates. ${spent ? `${money(spent)} ticked off so far.` : ''}</p></section>` : '';
   const pr = f.prices;
-  const prices = `<section class="card"><h3>Store prices</h3>
-      <p class="small">${pr.store ? (pr.items ? `${pr.items} prices on file for ${esc(pr.store)}, last checked ${niceDate(pr.newest)}.` : `No prices on file for ${esc(pr.store)} yet.`) : 'Choose your store above first.'}</p>
+  const prices = `<section class="card"><h2 class="label">Store prices</h2>
+      <p class="small">${pr.store ? (pr.items ? `${pr.items} prices on file for ${esc(pr.store)}, last checked ${niceDate(pr.newest)}.` : `No prices on file for ${esc(pr.store)} yet.`) : 'Choose your store in Shopping setup below first.'}</p>
       ${pr.refresh_requested ? '<p class="muted small">Refresh requested. Your coach will look up current prices at the next review, or sooner if you ask.</p>'
         : state.confirmRefresh ? '<div class="row"><button class="primary" data-action="refresh-go">Yes, look up live prices</button><button data-action="refresh-no">Cancel</button></div><p class="muted small">This asks Claude to search current flyers and prices for your store. It can take a while and uses your Claude plan.</p>'
         : `<button data-action="refresh-ask" ${pr.store ? '' : 'disabled'}>Refresh prices</button>`}
     </section>`;
-  const snap = d.photo_storage ? `<section class="card"><h3>Snap a meal</h3>
+  const snap = d.photo_storage ? `<section class="card"><h2 class="label">Snap a meal</h2>
       ${mr ? (mr.estimate && !mr.estimate.unclear ? `<div class="note"><b>${esc(mr.estimate.name)}</b><span>About ${mr.estimate.kcal} kcal, ${mr.estimate.protein_g} g protein. Confidence: ${esc(mr.estimate.confidence || 'low')}.</span></div><div class="row"><button class="primary" data-action="add-meal" data-kcal="${mr.estimate.kcal}" data-protein="${mr.estimate.protein_g}">Add to today</button><button data-action="clear-meal">Dismiss</button></div>` : `<p class="muted small">${mr.estimate ? 'That photo could not be read as a meal.' : 'Saved. Instant estimates need the API key; until then your coach reviews meal photos.'}</p>`) : '<p class="muted small">Take a photo and get a rough calorie estimate you can add to today.</p>'}
       <label class="file">Take or choose a photo<input type="file" accept="image/*" capture="environment" data-upload data-kind="meal"></label></section>` : '';
-  return `<h1 class="page-title">Food</h1>${plan && plan.reason ? `<div class="note"><b>Coach's note</b><span>${esc(plan.reason)}</span></div>` : ''}${snap}<h3>This week</h3>${meals}${shopping}${prices}${setup}`;
+  return `<h1 class="page-title">Food</h1>${plan && plan.reason ? `<div class="note"><b>Coach's note</b><span>${esc(plan.reason)}</span></div>` : ''}${snap}<h2 class="label">This week</h2>${meals}${shopping}${prices}${setup}`;
 }
 
 /* ---------- reminders, Apple Health, health notes ---------- */
@@ -589,7 +624,7 @@ function extraSettings() {
   const on = p.nudge_times.length > 0;
   const origin = location.origin;
   return `<section class="card">
-      <h3>Reminders</h3>
+      <h2 class="label">Reminders</h2>
       <p class="small">At most two a day, and only when there is something to do: a workout waiting, or a food check not yet logged.</p>
       <form id="nudges" class="stack">
         <div class="split"><label>Workout nudge<input type="time" name="t1" value="${p.nudge_times[0] || '17:30'}" required></label><label>Evening check<input type="time" name="t2" value="${p.nudge_times[1] || '21:00'}" required></label></div>
@@ -611,7 +646,7 @@ function extraSettings() {
         <code>${esc(origin)}/api/health/ingest</code>
       </div></details>
     <section class="card">
-      <h3>Health notes</h3>
+      <h2 class="label">Health notes</h2>
       <p class="small">Conditions and injuries your coach should plan around. This is not medical advice, and nothing here is shared outside your account.</p>
       ${p.conditions.length ? `<div class="chips">${p.conditions.map((c, i) => `<button data-action="del-condition" data-index="${i}" aria-label="Remove ${esc(c)}">${esc(c)} ×</button>`).join('')}</div>` : ''}
       <form id="condition" class="row"><label>Add one<input name="condition" placeholder="e.g. left knee injury, high cholesterol" required maxlength="80"></label><button class="fit" style="align-self:end">Add</button></form>
@@ -621,6 +656,11 @@ function extraSettings() {
 const TABS = { today: ['Today', todayScreen], body: ['Body', bodyScreen], plan: ['Plan', planScreen], food: ['Food', foodScreen], settings: ['More', settingsScreen] };
 
 function render() {
+  draw();
+  mascot.wake();
+}
+
+function draw() {
   const d = state.data;
   if (!d) { $app.innerHTML = ''; return; }
   if (!d.signed_in) { $app.innerHTML = authScreen(); return; }
@@ -646,6 +686,7 @@ document.addEventListener('toggle', (e) => {
   if (!el.dataset || !el.dataset.keep) return;
   if (el.open) state.open = el.dataset.keep;
   else if (state.open === el.dataset.keep) state.open = null;
+  mascot.wake(); // the page below has moved
 }, true);
 
 document.addEventListener('submit', (e) => {
@@ -673,6 +714,7 @@ document.addEventListener('submit', (e) => {
   } else if (form.id === 'custom-target') {
     save(() => api('POST', '/api/target', { calories: Number(v.calories), protein_g: state.data.suggested.protein_g, reason: 'Set by hand' }), 'Target set.');
   } else if (form.id === 'training') {
+    if (!armed(e.submitter || form.querySelector('button.primary'), 'Tap again to save and rebuild')) return;
     const equipment = [...form.querySelectorAll('#kit [aria-pressed="true"]')].map((b) => b.dataset.kit);
     save(async () => {
       await api('PUT', '/api/profile', { primary_goal: v.primary_goal, fitness_level: v.fitness_level, minutes: Number(v.minutes), days_per_week: Number(v.days_per_week), equipment });
@@ -708,7 +750,7 @@ async function act(el) {
   // Workout
   if (a === 'start') {
     state.session = await api('POST', '/api/workout/start', el.dataset.day ? { day_index: Number(el.dataset.day) } : {});
-    state.finish = { effort: null, feeling: null, symptoms: [] };
+    state.finish = { effort: null, feeling: null, symptoms: [], hurt: false };
     return go('workout');
   }
   if (a === 'resume') { state.session = state.session || state.data.workout.active; return go('workout'); }
@@ -741,6 +783,7 @@ async function act(el) {
   if (a === 'to-finish') return go('finish');
   if (a === 'effort') { state.finish.effort = Number(el.dataset.value); return render(); }
   if (a === 'symptom') { const v = el.dataset.value; const l = state.finish.symptoms; state.finish.symptoms = l.includes(v) ? l.filter((x) => x !== v) : [...l, v]; return render(); }
+  if (a === 'hurt') { state.finish.hurt = true; return render(); }
   if (a === 'feeling') { state.finish.feeling = state.finish.feeling === el.dataset.value ? null : el.dataset.value; return render(); }
   if (a === 'finish') {
     const f = el.dataset.skip ? {} : { effort: state.finish.effort, feeling: state.finish.feeling, symptoms: state.finish.symptoms };
@@ -749,13 +792,13 @@ async function act(el) {
     state.data = await api('GET', '/api/state');
     return go('celebrate');
   }
-  if (a === 'cancel-workout') { await api('POST', `/api/workout/${state.session.id}/cancel`, {}); state.session = null; state.view = 'tabs'; return load(); }
+  if (a === 'cancel-workout') { if (!armed(el, 'Tap again to discard. Progress is lost.')) return; await api('POST', `/api/workout/${state.session.id}/cancel`, {}); state.session = null; state.view = 'tabs'; return load(); }
 
   // Body, photos, food, reminders
   if (a === 'body-view') { state.bodyView = el.dataset.value; return render(); }
   if (a === 'tone') { state.body.skin_tone = el.dataset.value; if (viewer) viewer.tone(el.dataset.value); el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); return api('PUT', '/api/profile', { skin_tone: el.dataset.value }); }
   if (a === 'shape-reset') { state.body = await api('PUT', '/api/body', { overrides: {} }); return render(); }
-  if (a === 'del-photo') return save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Photo deleted.');
+  if (a === 'del-photo') return armed(el, 'Tap again to delete') && save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Photo deleted.');
   if (a === 'bought') { state.food.plan = await api('POST', '/api/food/bought', { index: Number(el.dataset.index) }); return render(); }
   if (a === 'refresh-ask') { state.confirmRefresh = true; return render(); }
   if (a === 'refresh-no') { state.confirmRefresh = false; return render(); }
@@ -768,15 +811,23 @@ async function act(el) {
   if (a === 'clear-meal') { state.mealResult = null; return render(); }
   if (a === 'nudges-off') return save(() => api('PUT', '/api/profile', { nudge_times: [] }), 'Reminders are off.');
   if (a === 'sync-key') { state.syncKey = (await api('POST', '/api/sync-key', {})).key; state.open = 'health'; return render(); }
-  if (a === 'del-condition') return save(() => api('PUT', '/api/profile', { conditions: state.data.profile.conditions.filter((_, i) => i !== Number(el.dataset.index)) }), 'Removed.');
+  if (a === 'del-condition') {
+    const before = state.data.profile.conditions;
+    await save(() => api('PUT', '/api/profile', { conditions: before.filter((_, i) => i !== Number(el.dataset.index)) }));
+    return toast('Removed.', () => api('PUT', '/api/profile', { conditions: before }));
+  }
 
   // Everything else
   if (a === 'met') return save(() => api('POST', '/api/day', { target_met: el.dataset.value === '1' }), el.dataset.value === '1' ? streakLine('On target.') : 'Logged. Tomorrow is a fresh start.');
   if (a === 'area') return el.setAttribute('aria-pressed', el.getAttribute('aria-pressed') !== 'true');
   if (a === 'use-target') return save(() => api('POST', '/api/target', { calories: Number(el.dataset.calories), protein_g: state.data.suggested.protein_g, reason: el.dataset.reason }), 'Target set.');
   if (a === 'revert') return save(() => api('POST', '/api/target/revert', {}), 'Change undone.');
-  if (a === 'rebuild') return save(() => api('POST', '/api/plan/regenerate', {}), 'Plan rebuilt.');
-  if (a === 'del-weight') return save(() => api('DELETE', `/api/weight/${el.dataset.date}`), 'Entry deleted.');
+  if (a === 'rebuild') return (!('confirm' in el.dataset) || armed(el, 'Tap again to replace this week\'s plan')) && save(() => api('POST', '/api/plan/regenerate', {}), 'Plan rebuilt.');
+  if (a === 'del-weight') {
+    const { date, kg } = el.dataset;
+    await save(() => api('DELETE', `/api/weight/${date}`));
+    return toast('Entry deleted.', () => api('POST', '/api/weight', { kg: Number(kg), date }));
+  }
   if (a === 'show-all') return save(() => api('PUT', '/api/profile', { show_all: el.checked }), el.checked ? 'Everything is open.' : 'Back to unlocking as you go.');
   if (a === 'copy') return navigator.clipboard.writeText(el.dataset.text).then(() => toast('Copied.'), () => toast('Copy failed. Select the address and copy it by hand.'));
   if (a === 'logout') { await api('POST', '/api/logout', {}); state.view = 'tabs'; return load(); }

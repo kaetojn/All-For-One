@@ -19,7 +19,7 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 ## Also built
 
 - **3D body:** a human figure morphed in the browser until its tape measurements match yours, with a projected goal shape you can adjust. Rendered with three.js.
-- **Companion:** a bear cub, built from simple shapes in `public/mascot.js`. It sits on the workout card, squats while something loads, pumps a paw when you tick an exercise and jumps when you finish.
+- **Companion:** a bear cub, built from simple shapes in `public/mascot.js`. It turns up only for moments worth marking: the finish screen, a workout done today, and streak milestones. It settles and stops drawing after a few seconds, and holds still when the phone asks for reduced motion.
 - **Photos:** private progress and meal photos, with instant estimates when `ANTHROPIC_API_KEY` is set on the Worker.
 - **Food:** store, budget, household and dietary needs; a weekly meal plan and shopping list that Claude writes; a price list Claude fills in.
 - **Reminders:** up to two a day, sent only when there is something to do.

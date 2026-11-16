@@ -70,6 +70,20 @@ canvas.setAttribute('aria-hidden', 'true');
 const FRAME = 1.5, CENTRE = 0.56, SEAT = 0.1; // camera sees 1.5 bear-heights; SEAT is the bear's underside when sitting
 let bear = null, renderer, scene, camera, busy = false, target = null, shown = false, last = 0, turn = 0.3;
 let pose = 'idle', until = 0;
+// The bear only draws while it is on screen and something is happening. It breathes for a few
+// seconds after it appears or reacts, then holds still and the loop stops, so an open app costs
+// nothing. With reduced motion it is drawn once, in its resting pose, and never animates.
+const SETTLE = 6000;
+const still = matchMedia('(prefers-reduced-motion: reduce)');
+let running = false, awakeUntil = 0;
+function wake(ms = SETTLE) {
+  if (!bear) return;
+  awakeUntil = Math.max(awakeUntil, performance.now() + ms);
+  if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+addEventListener('resize', () => wake(0));
+still.addEventListener?.('change', () => wake());
 const cur = {};
 
 function start() {
@@ -83,7 +97,6 @@ function start() {
   camera = new THREE.PerspectiveCamera(22, 1, 0.1, 20);
   bear = buildBear();
   scene.add(bear.root);
-  requestAnimationFrame(frame);
   mascot.react('wave', 2400);
 }
 
@@ -113,10 +126,12 @@ function aim(name, t) {
 }
 
 function frame(now) {
-  requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   target = document.querySelector('[data-mascot]');
-  if (!target) { if (shown) { canvas.style.opacity = 0; shown = false; } return; }
+  if (!target || document.hidden) { if (shown && !target) { canvas.style.opacity = 0; shown = false; } running = false; return; }
+  const calm = still.matches;
+  const more = !calm && (now < awakeUntil || (until && now < until) || busy);
+  if (more) requestAnimationFrame(frame); else running = false;
   const box = target.getBoundingClientRect();
   const sitting = target.dataset.mascot === 'sit';
   const size = Number(target.dataset.size) || 64; // bear height in CSS pixels
@@ -125,14 +140,15 @@ function frame(now) {
   // Where a given height on the bear lands in the canvas, in pixels from its top.
   const at = (height) => h * (0.5 - (height - CENTRE) / FRAME);
   // Standing: feet on the bottom edge of the marked box, centred. Sitting: seat on its edge, legs over the front.
-  const x = sitting ? box.right - w / 2 - size * 0.3 : box.left + box.width / 2 - w / 2;
+  const x = Math.max(0, Math.min(document.documentElement.clientWidth - w, sitting ? box.right - w / 2 - size * 0.3 : box.left + box.width / 2 - w / 2));
   const y = box.bottom - at(sitting ? SEAT : 0);
-  canvas.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  // The canvas sits in the page, not over it, so it scrolls with the content and needs no redraw.
+  canvas.style.transform = `translate(${Math.round(x + scrollX)}px, ${Math.round(y + scrollY)}px)`;
   if (!shown) { canvas.style.opacity = 1; shown = true; }
 
   if (until && now > until) until = 0;
-  if (!until) pose = resting();
-  const g = aim(pose, now / 1000), k = 1 - Math.exp(-dt * 12);
+  if (!until || calm) pose = resting();
+  const g = aim(pose, calm ? 0 : now / 1000), k = calm ? 1 : 1 - Math.exp(-dt * 12);
   for (const key in g) cur[key] = (cur[key] ?? g[key]) + (g[key] - (cur[key] ?? g[key])) * k;
   const b = bear;
   b.root.position.y = cur.lift + (sitting ? 0 : 0.0);
@@ -145,14 +161,17 @@ function frame(now) {
   b.ears.forEach((ear, i) => { ear.rotation.z = (i ? -1 : 1) * cur.ear * 0.35; });
   b.eyes.forEach((eye) => { eye.scale.y = 0.04 * (1 - cur.blink * 0.85); });
   turn += ((sitting ? -0.42 : 0.25) - turn) * Math.min(1, dt * 4);
-  b.root.rotation.y = turn + Math.sin(now / 2600) * 0.1;
+  if (calm) turn = sitting ? -0.42 : 0.25;
+  b.root.rotation.y = turn + (calm ? 0 : Math.sin(now / 2600) * 0.1);
   const view = FRAME / (2 * Math.tan((camera.fov * Math.PI) / 360)); // distance at which the frame fills the height
   camera.position.set(0, CENTRE + 0.06, view); camera.lookAt(0, CENTRE, 0);
   renderer.render(scene, camera);
 }
 
 export const mascot = {
-  shape() { start(); },
-  react(name, ms = 900) { if (bear) { pose = name; until = performance.now() + ms; } },
-  busy(on) { busy = on; },
+  shape() { start(); wake(); },
+  // Call after the page is redrawn, so the bear finds its new spot (or hides).
+  wake() { wake(); },
+  react(name, ms = 900) { if (bear) { pose = name; until = performance.now() + ms; wake(ms + SETTLE); } },
+  busy(on) { busy = on; if (on) wake(); },
 };

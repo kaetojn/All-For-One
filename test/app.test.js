@@ -262,6 +262,8 @@ test('onboarding builds a plan and the workout loop prefills from last time', as
 test('win messages and plans', async () => {
   const { winMessage } = await import('../worker/workouts.js');
   const { buildPlan, BY_ID } = await import('../worker/planner.js');
+  assert.equal(winMessage(0, 4), 'Saved to last week. This week starts fresh.');
+  assert.equal(winMessage(1, 4), 'First workout of the week. You showed up.');
   assert.equal(winMessage(3, 5), "3rd workout this week. You're locked in.");
   assert.equal(winMessage(2, 5), "2nd workout this week. You're locked in.");
   assert.equal(winMessage(3, 3), "That's all 3 for the week. Goal hit.");
