@@ -237,7 +237,6 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 
 export async function mcp(db, request, origin, env = {}) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-  if (request.method !== 'POST') return new Response('Use POST.', { status: 405, headers: { Allow: 'POST', ...CORS } });
   const user = await bearerUser(db, request);
   if (!user) {
     if (request.headers.get('Authorization')) await logStep(db, 'mcp', false, 'token not recognised or expired');
@@ -246,6 +245,8 @@ export async function mcp(db, request, origin, env = {}) {
       headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`, ...CORS },
     });
   }
+  // Signed-in clients may ask for a server-to-client stream; this server has none to offer.
+  if (request.method !== 'POST') return new Response('Use POST.', { status: 405, headers: { Allow: 'POST', ...CORS } });
   let body;
   try { body = await request.json(); } catch {
     return Response.json(rpcError(null, -32700, 'Parse error'), { status: 400, headers: CORS });

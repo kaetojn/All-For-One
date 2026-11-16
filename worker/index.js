@@ -106,6 +106,8 @@ export default {
     if (!dynamic) return env.ASSETS.fetch(request);
     try {
       await ensureSchema(env.DB);
+      // Record every request Claude makes while connecting (method and path only), so a stalled sign-in can be traced.
+      if (!path.startsWith('/api/')) await oauth.logStep(env.DB, 'hit', true, `${request.method} ${path} ${[...url.searchParams.keys()].join(',')} ua=${(request.headers.get('User-Agent') || '').slice(0, 50)}`);
       if (path === '/mcp') return await mcp(env.DB, request, url.origin, env);
       if (path.startsWith('/.well-known/oauth-authorization-server')) return oauth.metadata(url.origin);
       if (path.startsWith('/.well-known/oauth-protected-resource')) return oauth.resourceMetadata(url.origin);
@@ -114,6 +116,8 @@ export default {
       }
       if (signin === '/register' && request.method === 'POST') return await oauth.register(env.DB, request);
       if (signin === '/authorize' && (request.method === 'GET' || request.method === 'POST')) return await oauth.authorize(env.DB, request);
+      // Some clients check that the sign-in page exists before opening it.
+      if (signin === '/authorize' && request.method === 'HEAD') return new Response(null, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       if (signin === '/token' && request.method === 'POST') return await oauth.token(env.DB, request);
       if (path.startsWith('/api/')) return await api(env.DB, request, path, env);
       return json({ error: 'Not found.' }, 404);
