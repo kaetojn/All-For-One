@@ -111,7 +111,9 @@ const ordinal = (n) => `${n}${['th', 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 <
 export function winMessage(doneThisWeek, weeklyGoal) {
   if (weeklyGoal && doneThisWeek === weeklyGoal) return `That's all ${weeklyGoal} for the week. Goal hit.`;
   if (weeklyGoal && doneThisWeek > weeklyGoal) return 'Bonus session. Above and beyond.';
-  if (doneThisWeek <= 1) return 'First workout of the week. You showed up.';
+  // 0 means the session was started last week, so it counted there.
+  if (doneThisWeek === 0) return 'Saved to last week. This week starts fresh.';
+  if (doneThisWeek === 1) return 'First workout of the week. You showed up.';
   return `${ordinal(doneThisWeek)} workout this week. You're locked in.`;
 }
 
