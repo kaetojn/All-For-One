@@ -144,6 +144,148 @@ export function shapeFor(data, { height_cm, weight_kg, measurements = {}, muscle
   return { pos, cm, lo, hi, weights, fit: Object.fromEntries(order.map((x) => [x, Math.round((read(x) / (x === 'shoulders' ? data.yoke : 1)) * 10) / 10])) };
 }
 
+/* ---------- where the drawing puts its lines ---------- */
+
+// For each vertex, how much the surface folds inward there (positive) or bulges out (negative), relative
+// to the spacing of the mesh. Valleys between muscles, under the chest and around the joints come out
+// positive. Smoothed so the lines are soft strokes rather than following individual triangles, then
+// scaled so 1 marks the deepest few percent of the body.
+function creases(data, pos, normals) {
+  const N = data.N, idx = data.index;
+  if (!data.neighbours) {
+    const sets = Array.from({ length: N }, () => new Set());
+    for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = idx[t + e], b = idx[t + ((e + 1) % 3)]; sets[a].add(b); sets[b].add(a); }
+    data.neighbours = sets.map((x) => Uint16Array.from(x));
+  }
+  const nb = data.neighbours;
+  let k = new Float32Array(N);
+  for (let v = 0; v < N; v++) {
+    const list = nb[v];
+    if (!list.length) continue;
+    let sum = 0, len = 0;
+    const nx = normals[v * 3], ny = normals[v * 3 + 1], nz = normals[v * 3 + 2];
+    for (const u of list) {
+      const dx = pos[u * 3] - pos[v * 3], dy = pos[u * 3 + 1] - pos[v * 3 + 1], dz = pos[u * 3 + 2] - pos[v * 3 + 2];
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (!d2) continue;
+      sum += (dx * nx + dy * ny + dz * nz) / d2; len += Math.sqrt(d2);
+    }
+    k[v] = (sum / list.length) * (len / list.length); // dimensionless: independent of mesh density
+  }
+  for (let pass = 0; pass < 1; pass++) {
+    const next = new Float32Array(N);
+    for (let v = 0; v < N; v++) { let s = k[v] * 2; for (const u of nb[v]) s += k[u]; next[v] = s / (nb[v].length + 2); }
+    k = next;
+  }
+  const drawn = [...new Set(idx)].map((v) => k[v]).filter((x) => x > 0).sort((a, b) => a - b);
+  const scale = drawn[Math.floor(drawn.length * 0.9)] || 1;
+  const head = data.bone.head;
+  for (let v = 0; v < N; v++) k[v] = (k[v] / scale) * (data.dominant[v] === head ? 0.55 : 1); // a lighter hand on the face
+  return k;
+}
+
+// Drawn anatomy, like an illustrator's body-fat chart. Each line is placed relative to the skeleton so it
+// follows the person's shape, and has a "tier": how lean the body must be before it shows (0 shows first).
+// Torso lines are [x, y] as fractions of shoulder width and hip-to-neck length. Limb lines are [t, angle]:
+// t runs 0 to 1 down the bone, angle is degrees around it, 0 at the front and 90 on the outer side.
+const TORSO_FRONT = [
+  { tier: 0.12, pts: [[0.04, 0.64], [0.2, 0.6], [0.4, 0.61], [0.58, 0.68], [0.72, 0.78]], mirror: true }, // lower edge of the chest
+  { tier: 0.25, pts: [[0.08, 0.86], [0.3, 0.88], [0.52, 0.87]], mirror: true }, // collarbone
+  { tier: 0.42, pts: [[0, 0.24], [0, 0.6]] }, // centre line of the abs
+  { tier: 0.5, pts: [[0.24, 0.22], [0.29, 0.38], [0.27, 0.58]], mirror: true }, // outer edge of the abs
+  { tier: 0.55, pts: [[0.44, 0.2], [0.27, 0.06], [0.12, -0.05]], mirror: true }, // V-line over the hips
+  { tier: 0.6, pts: [[0, 0.5], [0.23, 0.485]], mirror: true },
+  { tier: 0.66, pts: [[0, 0.41], [0.25, 0.4]], mirror: true },
+  { tier: 0.76, pts: [[0, 0.32], [0.24, 0.315]], mirror: true },
+  { tier: 0.82, pts: [[0.5, 0.47], [0.58, 0.51]], mirror: true }, { tier: 0.82, pts: [[0.51, 0.53], [0.6, 0.57]], mirror: true }, // serratus
+];
+const TORSO_BACK = [
+  { tier: 0.28, pts: [[0, 0.08], [0, 0.9]] }, // spine
+  { tier: 0.38, pts: [[0.17, 0.78], [0.18, 0.64], [0.32, 0.57], [0.46, 0.66]], mirror: true }, // shoulder blade
+  { tier: 0.55, pts: [[0.5, 0.56], [0.36, 0.38], [0.22, 0.24]], mirror: true }, // lats
+  { tier: 0.62, pts: [[0.1, 0.18], [0.22, 0.1]], mirror: true }, // lower back
+];
+const LIMBS = {
+  upperarm: [{ tier: 0.3, pts: [[0.16, 0], [0.32, 45], [0.48, 90], [0.32, 135], [0.18, 180]] }, { tier: 0.48, pts: [[0.5, 92], [0.86, 96]] }],
+  lowerarm: [{ tier: 0.5, pts: [[0.05, 45], [0.4, 70]] }],
+  thigh: [{ tier: 0.36, pts: [[0.6, -50], [0.82, -42], [0.92, -12]] }, { tier: 0.2, pts: [[0.93, -38], [0.95, 0], [0.93, 38]] }, { tier: 0.44, pts: [[0.16, 30], [0.5, 36], [0.82, 30]] }],
+  calf: [{ tier: 0.4, pts: [[0.1, 180], [0.4, 178]] }],
+};
+
+// Distance to a polyline, signed by which side of it the point is on, and how far along the line the
+// nearest point is (0 to 1). The stroke tapers out near both ends, which also hides the sign flip there.
+function polyDist(px, py, pts) {
+  let best = Infinity, sign = 1, at = 0, run = 0;
+  const lens = [];
+  for (let i = 1; i < pts.length; i++) lens.push(Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = lens.reduce((a, b) => a + b, 0) || 1;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i], dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const raw = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0, t = Math.max(0, Math.min(1, raw));
+    const d = Math.hypot(px - ax - dx * t, py - ay - dy * t);
+    if (d < best) { best = d; sign = Math.sign(dx * (py - ay) - dy * (px - ax)) || 1; at = (run + t * lens[i - 1]) / total; }
+    run += lens[i - 1];
+  }
+  return [best, sign, at];
+}
+
+// For each vertex: how far it is from the nearest anatomy line (in pen widths) and that line's tier.
+function anatomy(data, pos, normals) {
+  const N = data.N, B = data.bone, j = jointsOf(data, pos);
+  const hip = j[B.pelvis].head[1], L = j[B.neck_01].head[1] - hip, sw = j[B.upperarm_l].head[0] - j[B.upperarm_r].head[0];
+  const halfW = Math.abs(sw) / 2, pen = L; // distances are stored as fractions of hip-to-neck length
+  const dist = new Float32Array(N).fill(9), signed = new Float32Array(N).fill(9), tier = new Float32Array(N), ends = new Float32Array(N);
+  const keep = (v, d, sg, t, at) => { if (d < dist[v]) { dist[v] = d; signed[v] = d * sg; tier[v] = t; ends[v] = Math.min(at, 1 - at); } };
+  const torso = new Set(['pelvis', 'spine_01', 'spine_02', 'spine_03', 'clavicle_l', 'clavicle_r'].map((n) => B[n]));
+  const torsoLine = (v, lines) => {
+    // Work in mesh units on both axes, so a distance means the same thing in every direction.
+    const x = Math.abs(pos[v * 3]), y = pos[v * 3 + 1] - hip, sx = pos[v * 3];
+    for (const line of lines) {
+      const pts = line.pts.map(([fx, fy]) => [fx * halfW, fy * L]);
+      const [d, sg, at] = polyDist(line.mirror ? x : sx, y, pts);
+      keep(v, d / L, sg * (line.mirror && sx < 0 ? -1 : 1), line.tier, at);
+    }
+  };
+  const limbs = {};
+  for (const [name, lines] of Object.entries(LIMBS)) for (const side of ['l', 'r']) {
+    const b = B[`${name}_${side}`];
+    if (b === undefined) continue;
+    const h = j[b].head, t = j[b].tail, ax = [t[0] - h[0], t[1] - h[1], t[2] - h[2]], len = Math.hypot(...ax);
+    for (let k = 0; k < 3; k++) ax[k] /= len;
+    const sign = Math.sign(h[0]) || 1;
+    // Outer side: up-and-out for arms (they hang out from the body), straight out for legs.
+    const ref = name.includes('arm') ? [sign, 1, 0] : [sign, 0, 0];
+    const flatten = (v) => { const d = v[0] * ax[0] + v[1] * ax[1] + v[2] * ax[2]; const o = [v[0] - ax[0] * d, v[1] - ax[1] * d, v[2] - ax[2] * d]; const n = Math.hypot(...o); return o.map((x) => x / n); };
+    limbs[b] = { h, ax, len, lines, fwd: flatten([0, 0, 1]), side: flatten(ref) };
+  }
+  for (let v = 0; v < N; v++) {
+    const d = data.dominant[v], nz = normals[v * 3 + 2];
+    if (torso.has(d)) { if (nz > 0.25) torsoLine(v, TORSO_FRONT); else if (nz < -0.25) torsoLine(v, TORSO_BACK); continue; }
+    const limb = limbs[d];
+    if (!limb) continue;
+    const { h, ax, len, fwd, side } = limb;
+    const r = [pos[v * 3] - h[0], pos[v * 3 + 1] - h[1], pos[v * 3 + 2] - h[2]];
+    const along = r[0] * ax[0] + r[1] * ax[1] + r[2] * ax[2];
+    const rad = [r[0] - ax[0] * along, r[1] - ax[1] * along, r[2] - ax[2] * along], radius = Math.hypot(...rad) || 1e-6;
+    const ang = (Math.atan2((rad[0] * side[0] + rad[1] * side[1] + rad[2] * side[2]) / radius, (rad[0] * fwd[0] + rad[1] * fwd[1] + rad[2] * fwd[2]) / radius) * 180) / Math.PI;
+    const deg = (Math.PI / 180) * radius;
+    for (const line of limb.lines) {
+      // Lay the line out flat around this vertex's angle, so the seam at 180 degrees is not a problem.
+      const pts = line.pts.map(([t, a]) => { let da = a - ang; da -= 360 * Math.round(da / 360); return [t * len, (ang + da) * deg]; });
+      const [dd, sg, at] = polyDist(along, ang * deg, pts);
+      keep(v, dd / pen, sg, line.tier, at);
+    }
+  }
+  return { dist, signed, tier, ends };
+}
+
+// How much anatomy shows at a body-fat percentage: 0 is soft all over, 1 is very lean.
+export function definitionAt(sex, bodyFat) {
+  if (bodyFat == null) return 0.15;
+  const soft = sex === 'female' ? 34 : 25, lean = sex === 'female' ? 15 : 8;
+  return Math.max(0, Math.min(1, (soft - bodyFat) / (soft - lean)));
+}
+
 /* ---------- the figure ---------- */
 
 export class Figure {
@@ -153,6 +295,11 @@ export class Figure {
     g.setIndex(new THREE.BufferAttribute(data.index, 1));
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(data.base), 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('cloth', new THREE.BufferAttribute(new Float32Array(data.N), 1));
+    g.setAttribute('crease', new THREE.BufferAttribute(new Float32Array(data.N), 1));
+    g.setAttribute('anat', new THREE.BufferAttribute(new Float32Array(data.N).fill(9), 1));
+    g.setAttribute('anatSide', new THREE.BufferAttribute(new Float32Array(data.N).fill(9), 1));
+    g.setAttribute('anatEnd', new THREE.BufferAttribute(new Float32Array(data.N), 1));
+    g.setAttribute('tier', new THREE.BufferAttribute(new Float32Array(data.N), 1));
     g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Array.from(data.skinIndex), 4));
     g.setAttribute('skinWeight', new THREE.BufferAttribute(data.skinWeight, 4, true));
     this.material = new THREE.MeshPhysicalMaterial({ color: tone, roughness: 0.58, metalness: 0, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color('#fff2e6') });
@@ -166,19 +313,35 @@ export class Figure {
     };
     // The line-drawing style: flat fill, with ink wherever the surface turns away from the viewer. That draws
     // the outline and also the folds and curves inside it, so it reads like an anatomical illustration.
-    this.lineColors = { fill: { value: new THREE.Color() }, ink: { value: new THREE.Color('#1b1a17') }, garment: { value: new THREE.Color('#55514b') } };
+    this.lineColors = { fill: { value: new THREE.Color() }, ink: { value: new THREE.Color('#1b1a17') }, garment: { value: new THREE.Color('#55514b') }, light: { value: new THREE.Vector3(0, 1, 0) }, define: { value: 0.15 }, px: { value: Math.min(devicePixelRatio, 2.5) } };
     this.lineMaterial = new THREE.MeshLambertMaterial({ color: '#ffffff' });
     this.lineMaterial.toneMapped = false;
     this.lineMaterial.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, { uFill: this.lineColors.fill, uInk: this.lineColors.ink, uGarment: this.lineColors.garment });
-      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float cloth;\nvarying float vCloth;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCloth = cloth;');
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCloth;\nuniform vec3 uFill;\nuniform vec3 uInk;\nuniform vec3 uGarment;')
-        .replace('#include <opaque_fragment>', `float facing = abs(dot(normal, normalize(vViewPosition)));
-          float inked = 1.0 - smoothstep(0.2, 0.3, facing);
+      Object.assign(shader.uniforms, { uDefine: this.lineColors.define, uFill: this.lineColors.fill, uInk: this.lineColors.ink, uGarment: this.lineColors.garment, uLight: this.lineColors.light, uPx: this.lineColors.px });
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float cloth;\nattribute float crease;\nattribute float anat;\nattribute float anatSide;\nattribute float anatEnd;\nattribute float tier;\nvarying float vCloth;\nvarying float vCrease;\nvarying float vAnat;\nvarying float vSide;\nvarying float vEnd;\nvarying float vTier;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCloth = cloth;\nvCrease = crease;\nvAnat = anat;\nvSide = anatSide;\nvEnd = anatEnd;\nvTier = tier;');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCloth;\nvarying float vCrease;\nvarying float vAnat;\nvarying float vSide;\nvarying float vEnd;\nvarying float vTier;\nuniform float uDefine;\nuniform vec3 uFill;\nuniform vec3 uInk;\nuniform vec3 uGarment;\nuniform vec3 uLight;\nuniform float uPx;')
+        .replace('#include <opaque_fragment>', `
+          // 1. Contour: wherever the surface turns edge-on, at a steady pen width.
+          float facing = abs(dot(normal, normalize(vViewPosition)));
+          float contour = 1.0 - smoothstep(1.2 * uPx, 2.2 * uPx, facing / max(fwidth(facing), 1e-4));
+          contour = max(contour, 1.0 - smoothstep(0.1, 0.16, facing));
+          // 2. Creases: the valleys between muscles and at folds, worked out on the mesh (see creases()).
+          //    Stronger where the fold is deep, fading as it turns away so lines thin toward the silhouette.
+          float crease = smoothstep(0.35, 0.95, vCrease) * smoothstep(0.15, 0.45, facing) * 0.85;
+          // 3. Form: a soft tone on the side of each mass away from the light.
+          float lit = dot(normal, normalize(uLight));
+          float shade = 1.0 - smoothstep(-0.35, 0.05, lit);
+          float skin = 1.0 - smoothstep(-0.01, 0.01, vCloth);
           float hem = 1.0 - smoothstep(0.0, 0.02, abs(vCloth));
-          vec3 flatFill = mix(uFill, uGarment, smoothstep(-0.01, 0.01, vCloth));
-          flatFill *= 0.9 + 0.1 * smoothstep(0.3, 0.75, facing);
-          outgoingLight = mix(flatFill, uInk, max(inked, hem * 0.85));
+          vec3 flatFill = mix(uGarment, uFill * (1.0 - 0.08 * shade), skin);
+          // 4. Drawn anatomy: lines appear tier by tier as the body gets leaner, firming up as they arrive.
+          float show = smoothstep(vTier - 0.02, vTier + 0.14, uDefine);
+          //    The stroke is where the signed distance crosses zero, so it stays continuous between vertices.
+          //    Away from any line (vAnat large) nothing is drawn, which also hides where two lines' regions meet.
+          float stroke = 1.0 - smoothstep(0.3 * uPx, 0.85 * uPx, abs(vSide) / max(fwidth(vSide), 1e-6));
+          float anatomy = stroke * smoothstep(0.0, 0.18, vEnd) * (1.0 - smoothstep(0.03, 0.05, vAnat)) * show * smoothstep(0.25, 0.5, facing) * 0.7;
+          float inked = max(max(contour, hem * 0.85), max(crease, anatomy) * skin);
+          outgoingLight = mix(flatFill, uInk, inked);
           #include <opaque_fragment>`);
     };
     this.setTone(tone);
@@ -229,6 +392,9 @@ export class Figure {
     this.geometry.attributes.cloth.needsUpdate = true;
   }
 
+  // How lean the drawing looks, 0 to 1 (see definitionAt). Eases rather than jumps.
+  setDefinition(level) { this.defineGoal = level; if (this.lineColors.define.value === 0.15 && this.defineGoal !== undefined && !this.defineSet) { this.lineColors.define.value = level; this.defineSet = true; } }
+
   setTone(hex) { this.material.color.set(hex); this.lineColors.fill.value.set(hex).lerp(new THREE.Color('#ffffff'), 0.5); }
 
   setShape(shape, animate = false) {
@@ -246,6 +412,11 @@ export class Figure {
     this.geometry.attributes.position.array.set(pos);
     this.geometry.attributes.position.needsUpdate = true;
     this.geometry.computeVertexNormals();
+    const normals = this.geometry.attributes.normal.array;
+    this.geometry.attributes.crease.array.set(creases(this.data, pos, normals));
+    const { dist, signed, tier, ends } = anatomy(this.data, pos, normals);
+    this.geometry.attributes.anat.array.set(dist); this.geometry.attributes.anatSide.array.set(signed); this.geometry.attributes.tier.array.set(tier); this.geometry.attributes.anatEnd.array.set(ends);
+    for (const name of ['crease', 'anat', 'anatSide', 'anatEnd', 'tier']) this.geometry.attributes[name].needsUpdate = true;
   }
 
   play(pose, ms = 0) { this.pose = pose; this.until = ms ? performance.now() + ms : 0; }
@@ -257,8 +428,9 @@ export class Figure {
       for (let i = 0; i < a.length; i++) a[i] = m.from[i] + (m.to[i] - m.from[i]) * e;
       this.geometry.attributes.position.needsUpdate = true;
       this.geometry.computeVertexNormals();
-      if (m.t === 1) this.morph = null;
+      if (m.t === 1) { this.morph = null; this.apply(m.to); }
     }
+    if (this.defineGoal !== undefined) { const d = this.lineColors.define; d.value += (this.defineGoal - d.value) * (1 - Math.exp(-dt * 3)); }
     if (this.until && now > this.until) { this.pose = 'idle'; this.until = 0; }
     const t = now / 1000, goal = {};
     const set = (name, x = 0, y = 0, z = 0) => { goal[name] = [x, y, z]; };

@@ -18,7 +18,7 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 
 ## Also built
 
-- **3D body:** a human figure morphed in the browser until its tape measurements match yours, with a projected goal shape you can adjust. Rendered with three.js.
+- **3D body:** a human figure morphed in the browser until its tape measurements match yours, shown shaded or as a line drawing. In the line drawing, muscle lines (chest, abs, deltoids, quads, back) appear progressively as body fat drops, so Now and Goal look different the way a body-fat chart does. Rendered with three.js.
 - **Companion:** a bear cub, built from simple shapes in `public/mascot.js`. It turns up only for moments worth marking: the finish screen, a workout done today, and streak milestones. It settles and stops drawing after a few seconds, and holds still when the phone asks for reduced motion.
 - **Photos:** private progress and meal photos, with instant estimates when `ANTHROPIC_API_KEY` is set on the Worker.
 - **Food:** store, budget, household and dietary needs; a weekly meal plan and shopping list that Claude writes; a price list Claude fills in.

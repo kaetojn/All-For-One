@@ -1,7 +1,7 @@
 // The Body tab's viewer: the figure on a turntable. Drag sideways to turn, drag up and down to
 // look higher or lower, pinch or scroll to zoom in on detail.
 
-import { THREE, loadBody, shapeFor, Figure, lights, makeRenderer } from '/figure.js';
+import { THREE, loadBody, shapeFor, Figure, lights, makeRenderer, definitionAt } from '/figure.js';
 
 // The inputs for a shape: tape measurements where they exist, body weight for everything else.
 export function shapeInputs(model, which) {
@@ -11,8 +11,15 @@ export function shapeInputs(model, which) {
   return {
     height_cm: model.height_cm, weight_kg: goal ? model.target_weight_kg || model.weight_kg : model.weight_kg,
     measurements: Object.fromEntries([...known].filter((s) => from[s]).map((s) => [s, from[s]])),
-    muscle: goal ? Math.min(0.15 + 0.08 * model.areas.length, 0.45) : 0,
+    muscle: definition(model.sex, goal ? model.target_body_fat : model.body_fat) + (goal ? Math.min(0.1 + 0.05 * model.areas.length, 0.3) : 0),
   };
+}
+
+// How much muscle shows at a given body fat: none when soft, clear separation when lean.
+function definition(sex, bodyFat) {
+  if (bodyFat == null) return 0;
+  const soft = sex === 'female' ? 30 : 22, lean = sex === 'female' ? 16 : 9;
+  return Math.max(-0.25, Math.min(0.8, ((soft - bodyFat) / (soft - lean)) * 0.8));
 }
 
 export async function mountBody(canvas, model, which, style = 'shaded') {
@@ -24,8 +31,10 @@ export async function mountBody(canvas, model, which, style = 'shaded') {
   const figure = new Figure(data, model.skin_tone);
   figure.setShape(shapeFor(data, shapeInputs(model, which)));
   figure.setStyle(style);
+  figure.setDefinition(definitionAt(model.sex, which === 'goal' ? model.target_body_fat : model.body_fat));
   scene.add(figure.group);
 
+  const upward = new THREE.Vector3(0, 1, 0);
   let yaw = 0.45, look = 0.47, dist = 2.75, touched = false, alive = true, last = performance.now();
   function frame(now) {
     if (!alive || !canvas.isConnected) { renderer.dispose(); return; }
@@ -34,6 +43,7 @@ export async function mountBody(canvas, model, which, style = 'shaded') {
     if (canvas.width !== Math.round(w * renderer.getPixelRatio())) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
     if (!touched) yaw += dt * 0.25;
     figure.group.rotation.y = yaw;
+    figure.lineColors.light.value.set(0, 1, 0.3).applyAxisAngle(upward, yaw); // the drawing's light turns with the body, so its lines stay put
     camera.position.set(0, look + 0.08, dist); camera.lookAt(0, look, 0);
     figure.update(now, dt);
     renderer.render(scene, camera);
@@ -57,7 +67,7 @@ export async function mountBody(canvas, model, which, style = 'shaded') {
   canvas.addEventListener('wheel', (e) => { e.preventDefault(); touched = true; zoom(1 + e.deltaY * 0.0012); }, { passive: false });
 
   return {
-    show(nextModel, nextWhich, animate = true) { const shape = shapeFor(data, shapeInputs(nextModel, nextWhich)); figure.setShape(shape, animate); if (nextWhich === 'goal') figure.play('flex', 1600); return shape; },
+    show(nextModel, nextWhich, animate = true) { const shape = shapeFor(data, shapeInputs(nextModel, nextWhich)); figure.setShape(shape, animate); figure.setDefinition(definitionAt(nextModel.sex, nextWhich === 'goal' ? nextModel.target_body_fat : nextModel.body_fat)); if (nextWhich === 'goal') figure.play('flex', 1600); return shape; },
     tone(hex) { figure.setTone(hex); },
     style(next) { figure.setStyle(next); },
     destroy() { alive = false; },
