@@ -2,10 +2,11 @@
 
     python3 scripts/build-body.py /path/to/anny/src/anny/data/mpfb2
 
-Writes public/body/body.json (layout, bones) and public/body/body.bin (numbers).
+Writes, for each sex, public/body/<sex>.json (layout, bones) and public/body/<sex>.bin.gz (numbers, gzipped).
 The app morphs this mesh in the browser to match a person's measurements, so nothing here is specific to anyone.
 """
 import gzip, json, sys
+import shutil
 from pathlib import Path
 import numpy as np
 
@@ -63,29 +64,36 @@ def target(path):
 def macro(sex, muscle='average', weight='average'):
     return target(f'macrodetails/universal-{sex}-young-{muscle}muscle-{weight}weight.target.gz')
 
-blob, layout = bytearray(), {}
-def put(name, array):
-    while len(blob) % 4:
-        blob.append(0)
-    layout[name] = {'offset': len(blob), 'length': int(array.size), 'type': array.dtype.name}
-    blob.extend(array.tobytes())
+def pack(sex):
+    blob, layout = bytearray(), {}
+    def put(name, array, **extra):
+        while len(blob) % 4:
+            blob.append(0)
+        layout[name] = {'offset': len(blob), 'length': int(array.size), 'type': array.dtype.name, **extra}
+        blob.extend(array.tobytes())
 
-SCALE = 4000  # deltas are stored as 1/4000 of a decimetre
-def put_target(name, delta):
-    rows = np.nonzero(np.abs(delta).max(axis=1) > 1e-5)[0]
-    put(f't:{name}:i', rows.astype(np.uint16))
-    put(f't:{name}:d', np.clip(np.round(delta[rows] * SCALE), -32767, 32767).astype(np.int16))
+    # A target is stored as the vertices it moves and how far, in 127ths of its largest movement.
+    def put_target(name, delta):
+        rows = np.nonzero(np.abs(delta).max(axis=1) > 1e-4)[0]
+        peak = float(np.abs(delta).max()) or 1.0
+        put(f't:{name}:i', rows.astype(np.uint16))
+        put(f't:{name}:d', np.round(delta[rows] / peak * 127).astype(np.int8), scale=peak / 127)
 
-put('position', base.astype(np.float32))
-put('index', tris.flatten())
-
-for sex in ('male', 'female'):
     avg = macro(sex)
-    put_target(f'{sex}', avg)
-    put_target(f'{sex}-heavy', macro(sex, weight='max') - avg)
-    put_target(f'{sex}-light', macro(sex, weight='min') - avg)
-    put_target(f'{sex}-muscular', macro(sex, muscle='max') - avg)
-    put_target(f'{sex}-soft', macro(sex, muscle='min') - avg)
+    put('position', (base + avg).astype(np.float32))
+    put('index', tris.flatten())
+    put_target('heavy', macro(sex, weight='max') - avg)
+    put_target('light', macro(sex, weight='min') - avg)
+    put_target('muscular', macro(sex, muscle='max') - avg)
+    put_target('soft', macro(sex, muscle='min') - avg)
+    for site, files in MEASURES.items():
+        for way in ('incr', 'decr'):
+            put_target(f'{site}-{way}', sum(target(f'{f}-{way}.target.gz') for f in files))
+    put('skinIndex', skin_i)
+    put('skinWeight', np.round(skin_w * 255).astype(np.uint8))
+    (out / f'{sex}.bin.gz').write_bytes(gzip.compress(bytes(blob), 9))
+    (out / f'{sex}.json').write_text(json.dumps({'source': 'MakeHuman / MPFB2 assets, CC0, via github.com/naver/anny', 'vertices': N, 'bones': bones, 'layout': layout}, separators=(',', ':')))
+    print(sex, 'raw', len(blob), 'gz', (out / f'{sex}.bin.gz').stat().st_size)
 
 MEASURES = {
     'neck': ['neck/measure-neck-circ'], 'chest': ['torso/measure-bust-circ', 'torso/measure-underbust-circ'], 'waist': ['torso/measure-waist-circ'],
@@ -93,9 +101,6 @@ MEASURES = {
     'forearm': ['arms/l-lowerarm-scale-horiz', 'arms/r-lowerarm-scale-horiz', 'arms/l-lowerarm-scale-depth', 'arms/r-lowerarm-scale-depth'],
     'thigh': ['legs/measure-thigh-circ'], 'calf': ['legs/measure-calf-circ'], 'belly': ['stomach/stomach-pregnant'],
 }
-for site, files in MEASURES.items():
-    for way in ('incr', 'decr'):
-        put_target(f'{site}-{way}', sum(target(f'{f}-{way}.target.gz') for f in files))
 
 # ---- skeleton and skin weights
 names = list(rig)
@@ -115,11 +120,8 @@ for v, ws in enumerate(per):
         skin_w[v] /= skin_w[v].sum()
 drawn = np.unique(tris)
 print('unweighted drawn vertices:', int((skin_w[drawn].sum(axis=1) == 0).sum()))
-put('skinIndex', skin_i)
-put('skinWeight', skin_w)
-
-(out / 'body.bin').write_bytes(bytes(blob))
-(out / 'body.json').write_text(json.dumps({'source': 'MakeHuman / MPFB2 assets, CC0, via github.com/naver/anny', 'vertices': N, 'scale': SCALE, 'bones': bones, 'eyes': [sorted(remap[i] for i in eyes['helper-l-eye']), sorted(remap[i] for i in eyes['helper-r-eye'])], 'layout': layout}, separators=(',', ':')))
-print('vertices', N, 'triangles', len(tris), 'bones', len(bones), 'bytes', len(blob))
-print('height dm', float(base[drawn][:, 1].max() - base[drawn][:, 1].min()), 'bounds', base[drawn].min(axis=0).round(2), base[drawn].max(axis=0).round(2))
-print([b['name'] for b in bones])
+for old in out.glob('body.*'):
+    old.unlink()
+pack('male')
+pack('female')
+print('vertices', N, 'triangles', len(tris), 'bones', len(bones))

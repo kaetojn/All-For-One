@@ -76,8 +76,7 @@ async function load() {
     if (state.view === 'tabs' && state.tab === 'food') state.food = await api('GET', '/api/food');
     if (state.view === 'tabs' && state.tab === 'plan') [state.targets, state.plan] = await Promise.all([api('GET', '/api/targets'), api('GET', '/api/plan').then((r) => r.plan)]);
     if (state.view === 'workout') state.session = d.workout.active;
-    if (d.profile.onboarded_at) { if (!(state.view === 'tabs' && state.tab === 'body')) state.body = await api('GET', '/api/body'); showMascot(state.body); } else showMascot(STAND_IN);
-  } else showMascot(STAND_IN);
+  }
   render();
 }
 
@@ -93,19 +92,11 @@ async function save(work, message) {
 }
 
 /* ---------- the companion ---------- */
-// A small copy of your own 3D figure that lives on the page (see mascot.js). It is loaded after the
-// first screen is drawn, so the app never waits for it. Until then these calls do nothing.
+// A bear cub that lives on the page (see mascot.js). It is loaded after the first screen is drawn,
+// so the app never waits for it. Until then these calls do nothing.
 
 let mascot = { shape() {}, react() {}, busy() {} };
-let mascotKey = '';
-const STAND_IN = { sex: 'male', height_cm: 176, weight_kg: 74, skin_tone: '#d19c74', measured: [], current: {}, goal: null, overrides: {}, areas: [] };
-function showMascot(model) {
-  const key = JSON.stringify([model.sex, model.height_cm, model.weight_kg, model.skin_tone, model.measured.map((m) => model.current[m])]);
-  if (key === mascotKey) return;
-  mascotKey = key;
-  mascot.shape(model);
-}
-import('/mascot.js').then((m) => { mascot = m.mascot; const key = mascotKey; mascotKey = ''; if (key) showMascot(state.body || STAND_IN); }).catch(() => {});
+import('/mascot.js').then((m) => { mascot = m.mascot; mascot.shape(); }).catch(() => {});
 
 // A spot for the companion to stand. `mood` picks how it behaves there: happy, cheer or sleepy.
 const perch = (mood = 'happy', size = 64) => `<span class="perch" data-mascot data-mood="${mood}" data-size="${size}" style="width:${Math.round(size * 0.6)}px;height:${size}px"></span>`;
@@ -762,7 +753,7 @@ async function act(el) {
 
   // Body, photos, food, reminders
   if (a === 'body-view') { state.bodyView = el.dataset.value; return render(); }
-  if (a === 'tone') { state.body.skin_tone = el.dataset.value; if (viewer) viewer.tone(el.dataset.value); showMascot(state.body); el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); return api('PUT', '/api/profile', { skin_tone: el.dataset.value }); }
+  if (a === 'tone') { state.body.skin_tone = el.dataset.value; if (viewer) viewer.tone(el.dataset.value); el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); return api('PUT', '/api/profile', { skin_tone: el.dataset.value }); }
   if (a === 'shape-reset') { state.body = await api('PUT', '/api/body', { overrides: {} }); return render(); }
   if (a === 'del-photo') return save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Photo deleted.');
   if (a === 'bought') { state.food.plan = await api('POST', '/api/food/bought', { index: Number(el.dataset.index) }); return render(); }

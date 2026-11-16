@@ -19,7 +19,7 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 ## Also built
 
 - **3D body:** a human figure morphed in the browser until its tape measurements match yours, with a projected goal shape you can adjust. Rendered with three.js.
-- **Companion:** a small copy of that figure lives on the page. It sits on the workout card, squats while something loads, pumps a fist when you tick an exercise and cheers when you finish.
+- **Companion:** a bear cub, built from simple shapes in `public/mascot.js`. It sits on the workout card, squats while something loads, pumps a paw when you tick an exercise and jumps when you finish.
 - **Photos:** private progress and meal photos, with instant estimates when `ANTHROPIC_API_KEY` is set on the Worker.
 - **Food:** store, budget, household and dietary needs; a weekly meal plan and shopping list that Claude writes; a price list Claude fills in.
 - **Reminders:** up to two a day, sent only when there is something to do.
@@ -72,6 +72,6 @@ One optional Worker secret: `ANTHROPIC_API_KEY`, for instant photo estimates. Th
 
 ## Credits
 
-The body mesh, shape targets and skeleton are from the MakeHuman / MPFB2 project (CC0), as packaged in [Anny](https://github.com/naver/anny); `scripts/build-body.py` packs them. 3D rendering uses [three.js](https://threejs.org) (MIT), copied into `public/vendor/`.
+The body mesh, shape targets and skeleton are from the MakeHuman / MPFB2 project (CC0), as packaged in [Anny](https://github.com/naver/anny); `scripts/build-body.py` packs them. 3D rendering uses [three.js](https://threejs.org) r187 (MIT), copied into `public/vendor/` by `scripts/vendor-three.py`, which strips comments to roughly halve the size.
 
 Exercise data and photos come from [Free Exercise DB](https://github.com/yuhonas/free-exercise-db), which is in the public domain.

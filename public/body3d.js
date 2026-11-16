@@ -9,19 +9,19 @@ export function shapeInputs(model, which) {
   const known = new Set([...model.measured, ...(goal ? Object.keys(model.overrides) : [])]);
   const from = goal ? model.goal : model.current;
   return {
-    sex: model.sex, height_cm: model.height_cm, weight_kg: goal ? model.target_weight_kg || model.weight_kg : model.weight_kg,
+    height_cm: model.height_cm, weight_kg: goal ? model.target_weight_kg || model.weight_kg : model.weight_kg,
     measurements: Object.fromEntries([...known].filter((s) => from[s]).map((s) => [s, from[s]])),
     muscle: goal ? Math.min(0.15 + 0.08 * model.areas.length, 0.45) : 0,
   };
 }
 
 export async function mountBody(canvas, model, which) {
-  const data = await loadBody();
+  const data = await loadBody(model.sex);
   const renderer = makeRenderer(canvas);
   const scene = new THREE.Scene();
   lights(scene);
   const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 30);
-  const figure = new Figure(data, model.skin_tone, model.sex === 'female');
+  const figure = new Figure(data, model.skin_tone);
   figure.setShape(shapeFor(data, shapeInputs(model, which)));
   scene.add(figure.group);
 
