@@ -1,5 +1,6 @@
-// Progress and meal photos. Files live in a private R2 bucket and are only served to the signed-in owner.
-// When an API key is set, a photo gets an instant estimate; otherwise it waits for Claude's next review.
+// Progress and meal photos. Only the analysis is kept. With an API key set, a photo is estimated as it
+// arrives and never stored. Otherwise it waits privately in R2 for Claude's next review, and is deleted
+// as soon as Claude saves its estimate. A row with an empty object_key has no photo left, only its numbers.
 
 import { HttpError, newId } from './auth.js';
 import { getProfile, todayIn, overview } from './store.js';
@@ -32,7 +33,7 @@ export async function estimate(env, kind, bytes, type, context, send = fetch) {
   try { return JSON.parse(reply.slice(reply.indexOf('{'), reply.lastIndexOf('}') + 1)); } catch { return null; }
 }
 
-const view = (r) => ({ id: r.id, kind: r.kind, pose: r.pose, date: r.date, estimate: r.estimate ? JSON.parse(r.estimate) : null, estimated_by: r.estimated_by, url: `/api/photo/${r.id}` });
+const view = (r) => ({ id: r.id, kind: r.kind, pose: r.pose, date: r.date, estimate: r.estimate ? JSON.parse(r.estimate) : null, estimated_by: r.estimated_by, url: r.object_key ? `/api/photo/${r.id}` : null });
 
 export async function upload(db, env, uid, request, send = fetch) {
   if (!env.PHOTOS) throw new HttpError(503, 'Photo storage is not set up yet.');
@@ -47,14 +48,15 @@ export async function upload(db, env, uid, request, send = fetch) {
   if (!bytes.byteLength || bytes.byteLength > MAX_BYTES) throw new HttpError(400, 'The photo must be under 4 MB.');
   const profile = await getProfile(db, uid);
   const id = newId();
-  const key = `${uid}/${kind}/${id}`;
-  await env.PHOTOS.put(key, bytes, { httpMetadata: { contentType: type } });
   let context = '';
   if (kind === 'body') {
     const o = await overview(db, uid);
     context = [profile.sex, profile.height_cm && `${profile.height_cm} cm`, o.latest.weight && `${o.latest.weight.kg} kg`, `${pose} view`].filter(Boolean).join(', ');
   }
   const result = await estimate(env, kind, bytes, type, context, send).catch((e) => { console.error(e); return null; });
+  // Keep the photo only if it still needs reading.
+  const key = result ? '' : `${uid}/${kind}/${id}`;
+  if (key) await env.PHOTOS.put(key, bytes, { httpMetadata: { contentType: type } });
   await db.prepare(`INSERT INTO photos (id, user_id, kind, pose, date, object_key, estimate, estimated_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(id, uid, kind, kind === 'body' ? pose : null, todayIn(profile.timezone), key, result ? JSON.stringify(result) : null, result ? 'app' : null, new Date().toISOString()).run();
   return view(await db.prepare(`SELECT * FROM photos WHERE id = ?`).bind(id).first());
@@ -73,6 +75,7 @@ async function own(db, uid, id) {
 
 export async function servePhoto(db, env, uid, id) {
   const row = await own(db, uid, id);
+  if (!row.object_key) throw new HttpError(404, 'This photo was deleted after it was analysed.');
   const object = env.PHOTOS && (await env.PHOTOS.get(row.object_key));
   if (!object) throw new HttpError(404, 'Photo file is missing.');
   return new Response(object.body, { headers: { 'Content-Type': object.httpMetadata?.contentType || 'image/jpeg', 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' } });
@@ -80,21 +83,24 @@ export async function servePhoto(db, env, uid, id) {
 
 export async function deletePhoto(db, env, uid, id) {
   const row = await own(db, uid, id);
-  if (env.PHOTOS) await env.PHOTOS.delete(row.object_key);
+  if (env.PHOTOS && row.object_key) await env.PHOTOS.delete(row.object_key);
   await db.prepare(`DELETE FROM photos WHERE id = ?`).bind(id).run();
 }
 
 // For Claude: the image itself, so it can look during a review.
 export async function photoForClaude(db, env, uid, id) {
   const row = await own(db, uid, id);
+  if (!row.object_key) throw new HttpError(404, 'This photo has already been analysed and deleted; only its estimate is kept.');
   const object = env.PHOTOS && (await env.PHOTOS.get(row.object_key));
   if (!object) throw new HttpError(404, 'Photo file is missing.');
   return [{ type: 'image', data: toBase64(await object.arrayBuffer()), mimeType: object.httpMetadata?.contentType || 'image/jpeg' }, { type: 'text', text: JSON.stringify(view(row)) }];
 }
 
-export async function saveEstimate(db, uid, id, input) {
-  await own(db, uid, id);
+export async function saveEstimate(db, uid, id, input, env = {}) {
+  const row = await own(db, uid, id);
   if (!input.estimate || typeof input.estimate !== 'object') throw new HttpError(400, 'Send an estimate object.');
-  await db.prepare(`UPDATE photos SET estimate = ?, estimated_by = 'claude' WHERE id = ?`).bind(JSON.stringify(input.estimate).slice(0, 2000), id).run();
+  // The estimate is all that is kept: the photo goes as soon as it has been read.
+  if (row.object_key && env.PHOTOS) await env.PHOTOS.delete(row.object_key);
+  await db.prepare(`UPDATE photos SET estimate = ?, estimated_by = 'claude', object_key = '' WHERE id = ?`).bind(JSON.stringify(input.estimate).slice(0, 2000), id).run();
   return view(await own(db, uid, id));
 }

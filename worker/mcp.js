@@ -171,9 +171,9 @@ const TOOLS = [
   {
     name: 'save_photo_estimate',
     title: 'Save photo estimate',
-    description: 'Save your estimate for a photo. Body: {"body_fat_low", "body_fat_high", "notes"}. Meal: {"name", "kcal", "protein_g", "items", "confidence"}. The tape-measure figure stays the official body-fat number; this is shown beside it.',
+    description: 'Save your estimate for a photo. The photo itself is then deleted; only the estimate is kept. Body: {"body_fat_low", "body_fat_high", "notes"}. Meal: {"name", "kcal", "protein_g", "items", "confidence"}. The tape-measure figure stays the official body-fat number; this is shown beside it.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, estimate: { type: 'object' } }, required: ['id', 'estimate'] },
-    run: (db, uid, a) => photos.saveEstimate(db, uid, a.id, a),
+    run: (db, uid, a, env) => photos.saveEstimate(db, uid, a.id, a, env),
   },
   {
     name: 'get_body_model',

@@ -20,7 +20,7 @@ One Cloudflare Worker serves everything: the web app, its API, and a connector t
 
 - **Body sketch:** a faceless figure drawn like an anatomy sketch, shaped by your measurements. Its pose follows body fat (passed out, slouching, standing, hands on hips, flexing) and so do the muscle lines. Build (lean, muscular, bodybuilder) and colour are set in More. The earlier 3D figure is still in the code; add `?3d` to the address to see it.
 - **Companion:** a bear cub, built from simple shapes in `public/mascot.js`. It turns up only for moments worth marking: the finish screen, a workout done today, and streak milestones. It settles and stops drawing after a few seconds, and holds still when the phone asks for reduced motion.
-- **Photos:** private progress and meal photos, with instant estimates when `ANTHROPIC_API_KEY` is set on the Worker.
+- **Photos:** only the analysis is kept. With `ANTHROPIC_API_KEY` set on the Worker a photo is read as it arrives and never stored; otherwise it is held privately until Claude reads it at a review, then deleted.
 - **Food:** store, budget, household and dietary needs; a weekly meal plan and shopping list that Claude writes; a price list Claude fills in.
 - **Reminders:** up to two a day, sent only when there is something to do.
 - **Apple Health:** an endpoint an iPhone Shortcut posts to (`/api/health/ingest`).

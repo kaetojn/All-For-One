@@ -420,23 +420,13 @@ function planScreen() {
   const d = state.data;
   const g = d.goal;
   const s = d.suggested;
-  const p = state.plan;
   const areas = new Set(g ? g.target_areas : []);
-  const nextIndex = d.workout.next ? d.workout.next.day_index : -1;
-
-  const days = p ? p.days.map((day, i) => `<details class="card" data-keep="day${i}" ${state.open === `day${i}` ? 'open' : ''}>
-      <summary>${esc(day.name)}<span>${i === nextIndex ? 'Next · ' : ''}${day.exercises.length} exercises · ${day.minutes} min</span></summary>
-      <div class="inside">${day.exercises.map((x) => `<div class="row"><div class="fit" style="width:64px">${demo(x.exercise_id, true)}</div><div><b>${esc(x.name)}</b><br><span class="muted small">${dose(x)} · ${esc(x.equipment)}</span></div></div>`).join('')}
-        ${i !== nextIndex ? `<button data-action="start" data-day="${i}">Do this one today</button>` : ''}</div>
-    </details>`).join('') : '';
-
   let target = '';
   if (!s.ready) target = `<p class="muted">Still needed: ${esc(s.missing.join(', '))}.</p>`;
   else if (!g) target = `<p class="muted">You maintain your weight at about ${s.maintenance} kcal a day. Set a goal above to get a target.</p>`;
   else {
     const weekly = s.weekly_change_kg ? `${s.weekly_change_kg > 0 ? '+' : ''}${wOut(s.weekly_change_kg)} ${wUnit()} a week` : 'holding steady';
     target = `<div class="split"><div class="stat"><b>${s.calories}</b><span>kcal a day · ${weekly}</span></div><div class="stat"><b>${s.maintenance}</b><span>kcal to maintain</span></div></div>
-      ${d.projection && d.target ? `<p class="small">${projectionLine(d.projection, s.target_weight_kg)}</p>` : ''}
       ${s.target_weight_kg ? `<p class="muted small">Goal weight about ${wOut(s.target_weight_kg)} ${wUnit()}. Protein ${s.protein_g} g a day.</p>` : ''}
       ${s.missing ? `<p class="muted small">Still needed: ${esc(s.missing.join(', '))}.</p>` : ''}
       ${s.warnings.length ? `<div class="notice"><b>This pace is aggressive</b>${s.warnings.map((w) => `<span>${esc(w.message)}</span>`).join('')}${s.safer ? `<span>A safer plan is ${s.safer.calories} kcal a day, reaching the goal around ${niceDate(s.safer.target_date)} ${s.safer.target_date.slice(0, 4)}.</span>` : ''}</div>` : ''}
@@ -447,14 +437,7 @@ function planScreen() {
   }
   const hist = state.targets || [];
   const live = hist.find((x) => !x.reverted_at);
-  return `<h1 class="page-title">Plan</h1>
-    ${p && p.set_by === 'claude' && p.reason ? `<div class="note"><b>Coach's note</b><span>${esc(p.reason)}</span></div>` : ''}
-    <h2 class="label">Your week</h2>
-    ${days || '<p class="muted">No plan yet.</p>'}
-    <button class="link" data-action="rebuild" ${p ? 'data-confirm' : ''}>${p ? 'Rebuild the plan from my profile' : 'Build my plan'}</button>
-    <h2 class="label">Goal</h2>
-    <section class="card">
-      <form id="goal" class="stack">
+  const goalForm = `<form id="goal" class="stack">
         <div class="split">
           <label>Target body fat (%)<input name="target_body_fat" inputmode="decimal" value="${g?.target_body_fat ?? ''}"></label>
           <label>Target weight (${wUnit()})<input name="target_weight" inputmode="decimal" value="${g?.target_weight_kg ? wOut(g.target_weight_kg) : ''}" placeholder="optional"></label>
@@ -462,11 +445,21 @@ function planScreen() {
         <label>Reach it by<input name="target_date" type="date" value="${g?.target_date ?? ''}" min="${d.today}" required></label>
         <fieldset class="group"><legend class="label">Areas to define</legend><div class="chips" id="areas">${AREAS.map((a) => `<button type="button" data-action="area" data-area="${a}" aria-pressed="${areas.has(a)}">${cap(a === 'calf' ? 'calves' : a)}</button>`).join('')}</div></fieldset>
         <button class="primary">${g ? 'Update goal' : 'Set goal'}</button>
-      </form>
-    </section>
-    <h2 class="label">Calories</h2>
-    <section class="card">${target}</section>
-    ${hist.length ? `<details class="card"><summary>Target history<span>${hist.length}</span></summary><div class="inside"><div class="list">${hist.map((t) => `<div><span><b>${t.calories} kcal</b>${t.protein_g ? ` · ${t.protein_g} g protein` : ''}<br><span class="muted small">${niceDate(t.created_at.slice(0, 10))} · set by ${esc(t.set_by)}${t.reverted_at ? ' · undone' : ''}${t.reason ? `<br>${esc(t.reason)}` : ''}</span></span>${t === live ? '<button class="link fit" data-action="revert">Undo</button>' : ''}</div>`).join('')}</div></div></details>` : ''}`;
+      </form>`;
+  const historyList = hist.length ? `<h2 class="label">Target history</h2><div class="list">${hist.map((t) => `<div><span><b>${t.calories} kcal</b>${t.protein_g ? ` · ${t.protein_g} g protein` : ''}<br><span class="muted small">${niceDate(t.created_at.slice(0, 10))} · set by ${esc(t.set_by)}${t.reverted_at ? ' · undone' : ''}${t.reason ? `<br>${esc(t.reason)}` : ''}</span></span>${t === live ? '<button class="link fit" data-action="revert">Undo</button>' : ''}</div>`).join('')}</div>` : '';
+  const goalLine = g ? [g.target_weight_kg ? `${wOut(g.target_weight_kg)} ${wUnit()}` : s.target_weight_kg ? `about ${wOut(s.target_weight_kg)} ${wUnit()}` : null, g.target_body_fat ? `${g.target_body_fat}% body fat` : null].filter(Boolean).join(' · ') : '';
+  const t = d.target;
+  // Once something is set it shows as one line; the controls open only when you want to change it.
+  return `<h1 class="page-title">Plan</h1>
+    ${g ? `<details class="card" data-keep="goal" ${state.open === 'goal' ? 'open' : ''}>
+        <summary><span class="sumtext"><b>Goal</b><small>${goalLine} by ${niceDate(g.target_date)}, ${g.target_date.slice(0, 4)}</small></span><span>Edit</span></summary>
+        <div class="inside">${goalForm}</div></details>`
+      : `<h2 class="label">Goal</h2><section class="card">${goalForm}</section>`}
+    ${t ? `<details class="card" data-keep="calories" ${state.open === 'calories' ? 'open' : ''}>
+        <summary><span class="sumtext"><b>${t.calories.toLocaleString()} kcal a day</b><small>${t.protein_g ? `${t.protein_g} g protein · ` : ''}${d.projection && d.projection.weekly_change_kg ? `${d.projection.weekly_change_kg > 0 ? 'gaining' : 'losing'} about ${Math.abs(wOut(d.projection.weekly_change_kg))} ${wUnit()} a week` : 'holding steady'}</small></span><span>Change</span></summary>
+        <div class="inside">${target}${historyList}</div></details>
+      ${d.projection ? `<p class="muted small" style="padding:0 4px">${projectionLine(d.projection, s.target_weight_kg)}</p>` : ''}`
+      : `<h2 class="label">Calories</h2><section class="card">${target}</section>`}`;
 }
 
 /* ---------- settings ---------- */
@@ -588,7 +581,7 @@ async function uploadPhoto(input) {
   if (!res.ok) throw new Error(data.error || 'Upload failed.');
   if (input.dataset.kind === 'meal') state.mealResult = data;
   await load();
-  toast(data.estimate ? 'Photo saved and estimated.' : 'Photo saved. Your coach will look at the next review.');
+  toast(data.estimate ? 'Read and deleted. Result saved.' : 'Saved privately until your coach reads it, then deleted.');
 }
 
 const estimateLine = (p) => {
@@ -598,15 +591,16 @@ const estimateLine = (p) => {
   return p.kind === 'body' ? `About ${e.body_fat_low}–${e.body_fat_high}% body fat` : `${e.name} · about ${e.kcal} kcal`;
 };
 
+// Photo check-ins: only the analysis is kept, never a gallery of photos.
 function photosCard() {
   const d = state.data;
   if (!d.photo_storage) return '';
   const list = state.photos || [];
-  return `<details class="card" data-keep="photos" ${state.open === 'photos' ? 'open' : ''}><summary>Progress photos<span>${list.length || 'None yet'}</span></summary>
+  return `<details class="card" data-keep="photos" ${state.open === 'photos' ? 'open' : ''}><summary>Photo check-ins<span>${list.length || 'None yet'}</span></summary>
     <div class="inside">
-      <p class="muted small">Same spot, same light, same pose each time. Photos are private to you. ${d.photo_ai ? 'Each one gets a rough body-fat range; the tape measure stays the official number.' : 'Your coach looks at them during reviews.'}</p>
+      <p class="muted small">Same spot, same light, same pose each time. Each photo is read for a rough body-fat range, then deleted; only the result is kept. ${d.photo_ai ? 'Results appear straight away.' : 'Your coach reads them at the next review; until then the photo is held privately.'}</p>
       <div class="row">${['front', 'side', 'back'].map((pose) => `<label class="file">${cap(pose)}<input type="file" accept="image/*" data-upload data-kind="body" data-pose="${pose}"></label>`).join('')}</div>
-      ${list.length ? `<div class="gallery">${list.map((p) => `<figure><img src="${p.url}" alt="${p.pose} view, ${niceDate(p.date)}" loading="lazy"><figcaption>${niceDate(p.date)} · ${p.pose}<br>${esc(estimateLine(p))}${p.estimate && p.estimate.notes ? `<br>${esc(p.estimate.notes)}` : ''}<br><button class="link" data-action="del-photo" data-id="${p.id}">Delete</button></figcaption></figure>`).join('')}</div>` : ''}
+      ${list.length ? `<div class="list">${list.map((p) => `<div><span><b>${esc(estimateLine(p))}</b><br><span class="muted small">${niceDate(p.date)} · ${p.pose}${p.estimate && p.estimate.notes ? ` · ${esc(p.estimate.notes)}` : ''}</span></span><button class="link fit" data-action="del-photo" data-id="${p.id}" data-confirm>Remove</button></div>`).join('')}</div>` : ''}
     </div></details>`;
 }
 
@@ -850,7 +844,7 @@ async function act(el) {
   if (a === 'build') return save(() => api('PUT', '/api/profile', { build: el.dataset.value }), 'Build updated.');
   if (a === 'tone') return save(() => api('PUT', '/api/profile', { skin_tone: el.dataset.value }), 'Colour updated.');
   if (a === 'shape-reset') { state.body = await api('PUT', '/api/body', { overrides: {} }); return render(); }
-  if (a === 'del-photo') return armed(el, 'Tap again to delete') && save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Photo deleted.');
+  if (a === 'del-photo') return armed(el, 'Tap again to remove') && save(() => api('DELETE', `/api/photo/${el.dataset.id}`), 'Result removed.');
   if (a === 'bought') { state.food.plan = await api('POST', '/api/food/bought', { index: Number(el.dataset.index) }); return render(); }
   if (a === 'refresh-ask') { state.confirmRefresh = true; return render(); }
   if (a === 'refresh-no') { state.confirmRefresh = false; return render(); }

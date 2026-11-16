@@ -426,15 +426,21 @@ test('photos: stored privately, estimated when a key is set, owner only', async 
   assert.equal(sentBody.messages[0].content[0].type, 'image');
   assert.equal(meal.estimate.kcal, 320);
   assert.equal(meal.estimated_by, 'app');
+  assert.equal(meal.url, null, 'an analysed photo is not kept');
+  assert.equal(files.size, 0);
   const body = await photos.upload(db, { ...env, ANTHROPIC_API_KEY: undefined }, uid, req('kind=body&pose=front'));
   assert.equal(body.estimate, null, 'waits for review without a key');
+  assert.equal(files.size, 1, 'kept only until it is read');
   assert.equal((await photos.listPhotos(db, uid, 'body')).length, 1);
   await assert.rejects(() => photos.servePhoto(db, env, 'someone-else', body.id), /not found/);
   assert.equal((await photos.servePhoto(db, env, uid, body.id)).headers.get('Cache-Control'), 'private, max-age=86400');
   assert.equal((await photos.photoForClaude(db, env, uid, body.id))[0].type, 'image');
-  assert.equal((await photos.saveEstimate(db, uid, body.id, { estimate: { body_fat_low: 20, body_fat_high: 25 } })).estimated_by, 'claude');
+  const read = await photos.saveEstimate(db, uid, body.id, { estimate: { body_fat_low: 20, body_fat_high: 25 } }, env);
+  assert.equal(read.estimated_by, 'claude');
+  assert.equal(read.url, null);
+  assert.equal(files.size, 0, 'deleted once analysed');
+  await assert.rejects(() => photos.photoForClaude(db, env, uid, body.id), /already been analysed/);
   await photos.deletePhoto(db, env, uid, body.id);
-  assert.equal(files.size, 1);
 });
 
 test('3D body numbers: defaults, projection toward the goal, overrides', async () => {

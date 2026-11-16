@@ -214,3 +214,6 @@ button.primary.armed { background: var(--stop); border-color: var(--stop); color
 @keyframes zzz { 0%, 100% { opacity: .3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4px); } }
 @keyframes drop { 0% { opacity: 0; transform: translateY(-3px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(10px); } }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.sumtext { display: grid; gap: 2px; text-align: left !important; margin-left: 0 !important; color: var(--ink) !important; }
+.sumtext b { font-weight: 600; font-size: .98rem; }
+.sumtext small { color: var(--muted); font-weight: 400; font-size: .84rem; }
